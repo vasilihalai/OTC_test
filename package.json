@@ -1,11 +1,11 @@
 {
-  "name": "otc",
+  "name": "otc-test",
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "homepage": "https://vasilihalai.github.io/OTC",
+  "homepage": "https://vasilihalai.github.io/OTC_test",
   "scripts": {
-    "deploy": "gh-pages -d dist",
+    "deploy": "gh-pages -d dist -r git@github.com:vasilihalai/OTC_test.git",
     "dev": "vite",
     "dev:https": "cross-env HTTPS=true vite",
     "build": "tsc --noEmit && vite build",
