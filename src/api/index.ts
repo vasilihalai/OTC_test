@@ -22,6 +22,11 @@ import * as mockWithdrawals from '@/api/mock/withdrawals.mock.ts';
 import * as realWithdrawals from '@/api/real/withdrawals.ts';
 import * as realTransfers from '@/api/real/transfers.ts';
 import * as realCertificate from '@/api/real/certificate.ts';
+import { authenticateMiniApp } from '@/api/real/miniAppAuth.ts';
+import { saveAccessToken } from '@/api/real/http/tokenStore.ts';
+import { getFreshInitData } from '@/telegram/initData.ts';
+import { setLastClientType } from '@/lib/lastClientType.ts';
+import type { Session } from '@/api/types.ts';
 
 export const USE_REAL_API = import.meta.env.VITE_USE_REAL_API === 'true';
 
@@ -34,10 +39,36 @@ export const verifyCode = USE_REAL_API ? realAuth.verifyCode : mockAuth.verifyCo
 export const MockSignInError = mockAuth.MockSignInError;
 export const MockVerifyCodeError = mockAuth.MockVerifyCodeError;
 
-// Sign-in — api-integration.md §2.1. Same two-step OTP shape in both modes
-// now, so screens no longer branch on USE_REAL_API for this.
+// Sign-in — api-integration.md §2.1. Same two-step OTP shape in both modes,
+// so screens still don't branch on USE_REAL_API for this — the Telegram-
+// binding orchestration below is entirely absorbed at this swap point.
 export const signInRequestOtp = USE_REAL_API ? realAuth.signInRequestOtp : mockAuth.signInRequestOtp;
-export const signInConfirmOtp = USE_REAL_API ? realAuth.signInConfirmOtp : mockAuth.signInConfirmOtp;
+
+/**
+ * Backend-confirmed flow, replacing the old `x-telegram-init-data`/
+ * `markInitDataBindPending()` one-shot-header approach entirely (see
+ * `real/miniAppAuth.ts`'s own comment for the full contract). In real mode,
+ * the OTP exchange only produces a *platform* JWT — this immediately spends
+ * it as a `Bearer` on one `authenticateMiniApp()` call, which creates the
+ * Telegram↔platform binding and returns the token that actually becomes
+ * the session; that's the one saved into `tokenStore`, not the platform JWT.
+ * Kept here rather than in `real/auth.ts` so both modes still return one
+ * `Session` shape and `SignIn.tsx` needs no `USE_REAL_API` branch of its own.
+ */
+export async function signInConfirmOtp(params: { transactionId: string; otp: string; email: string; clientType: ClientType }): Promise<Session> {
+  if (!USE_REAL_API) {
+    return mockAuth.signInConfirmOtp(params);
+  }
+  const { platformAccessToken } = await realAuth.signInConfirmOtp(params);
+  const initData = getFreshInitData();
+  if (!initData) {
+    throw new Error('No Telegram initData available to complete sign-in');
+  }
+  const result = await authenticateMiniApp(initData, platformAccessToken);
+  saveAccessToken(result);
+  setLastClientType(params.clientType);
+  return { email: params.email, clientType: params.clientType };
+}
 
 // Google / Apple — §2.2. Mock stays an instant fake session; real opens an
 // external browser and completes (if at all) on relaunch — genuinely

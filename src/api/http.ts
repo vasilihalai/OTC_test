@@ -3,22 +3,11 @@ import { useToastStore } from '@/store/toast.ts';
 import { ensureFreshAccessToken, refreshTokens } from '@/api/real/http/tokenStore.ts';
 import { ApiError, toApiError } from '@/api/real/http/apiError.ts';
 import { serviceUrl, type Service } from '@/api/real/http/servicePaths.ts';
-import { getFreshInitData } from '@/telegram/initData.ts';
 
 export { ApiError };
 
 function requestId(): string {
   return crypto.randomUUID();
-}
-
-// api-integration.md §2.4 — initData is sent exactly once, on the first
-// authenticated request after a successful sign-in, so the backend can bind
-// telegram_id to the account for push. Never on every request. Call this
-// right after `setSession()`; the next `apiFetch` call picks it up and
-// clears the flag regardless of whether the header was actually attachable.
-let pendingInitDataBind = false;
-export function markInitDataBindPending(): void {
-  pendingInitDataBind = true;
 }
 
 /**
@@ -43,13 +32,6 @@ async function rawFetch(path: string, init: RequestInit, isRetry: boolean, servi
   };
   if (import.meta.env.VITE_APP_VERSION) {
     headers['x-client-version'] = import.meta.env.VITE_APP_VERSION;
-  }
-  if (pendingInitDataBind) {
-    pendingInitDataBind = false;
-    const initData = getFreshInitData();
-    if (initData) {
-      headers['x-telegram-init-data'] = initData;
-    }
   }
 
   const res = await fetch(serviceUrl(service, path), {
