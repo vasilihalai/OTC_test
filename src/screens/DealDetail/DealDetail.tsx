@@ -416,7 +416,7 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
       )}
 
       <Button variant="accent" loading={confirming} disabled={branch === 'belowmin'} onClick={() => void handleConfirm()}>
-        {ru.dealDetail.confirmDealAction}
+        {ru.dealDetail.confirmPaymentAction}
       </Button>
       <Button
         type="button"
