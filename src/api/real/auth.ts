@@ -1,7 +1,7 @@
-import type { AuthOtpSource, ClientType, Session, SocialProvider } from '@/api/types.ts';
+import type { AuthOtpSource, ClientType, SocialProvider } from '@/api/types.ts';
 import { authBasicFetch, formBody } from '@/api/real/http/authClient.ts';
 import { publicPost } from '@/api/real/http/publicClient.ts';
-import { saveTokens } from '@/api/real/http/tokenStore.ts';
+import { clearTokens } from '@/api/real/http/tokenStore.ts';
 import { openExternalLink } from '@/telegram/adapter.ts';
 import { apiFetch } from '@/api/http.ts';
 
@@ -51,21 +51,23 @@ export interface OtpConfirmParams {
   transactionId: string;
   /** The one code the modal collected, whichever source it came from. */
   otp: string;
-  /** Not sent to the backend — the token response carries neither; folded into the returned `Session` so the mock/real pair share one call shape. */
+  /** Unused here (kept only so this call's shape matches the mock's — see below); the real flow derives the session from `authenticateMiniApp()` afterward, not from this response. */
   email: string;
   clientType: ClientType;
 }
 
 /**
- * Saves the resulting tokens into `tokenStore` and returns the UI-facing
- * `Session` built from the caller-supplied `email`/`clientType`.
+ * Exchanges the OTP for a **platform** JWT — not the mini app session.
+ * Backend-confirmed flow (superseding the §2.1 reading this was originally
+ * built against): this token is only ever used once, as a `Bearer` on a
+ * single `authenticateMiniApp()` call that creates the Telegram↔platform
+ * binding and returns the token that actually becomes the session (see
+ * `SignIn.tsx`). Never saved into `tokenStore` here.
  *
  * The `scope` value is undocumented (question B2) — sent empty for now.
- * Isolated to this one function so correcting it once the backend answers
- * is a one-place change.
  */
-export async function signInConfirmOtp(params: OtpConfirmParams): Promise<Session> {
-  const res = await authBasicFetch<{ access_token: string; refresh_token: string; token_type: string; expires_in: number }>(
+export async function signInConfirmOtp(params: OtpConfirmParams): Promise<{ platformAccessToken: string }> {
+  const res = await authBasicFetch<{ access_token: string; token_type: string; expires_in: number }>(
     '/oauth2/token',
     formBody({
       grant_type: 'email_password',
@@ -75,8 +77,7 @@ export async function signInConfirmOtp(params: OtpConfirmParams): Promise<Sessio
     }),
     'application/x-www-form-urlencoded',
   );
-  saveTokens(res);
-  return { email: params.email, clientType: params.clientType };
+  return { platformAccessToken: res.access_token };
 }
 
 // ---------------------------------------------------------------------------
@@ -113,19 +114,21 @@ export interface OAuthExchangeResult {
   twoFA: boolean;
 }
 
-/** Camelcase envelope — different from `/oauth2/token`'s snake_case (§2.2's own note). Normalised into `tokenStore` here, at the boundary. */
+/**
+ * Camelcase envelope — different from `/oauth2/token`'s snake_case (§2.2's
+ * own note). **Disabled and unreconciled with the Telegram-binding flow**
+ * (`SignIn.tsx`'s `SOCIAL_AUTH_ENABLED = false`, no real contract for it
+ * yet) — this used to save the resulting tokens straight into `tokenStore`
+ * as the session, which no longer applies now that the session is always a
+ * mini-app access token obtained via `authenticateMiniApp()`. Left
+ * returning the raw exchange result without touching `tokenStore` at all;
+ * revisit alongside re-enabling social sign-in.
+ */
 export async function exchangeSocialCode(code: string, state: string): Promise<OAuthExchangeResult> {
   const res = await publicPost<{
     accessToken: string; refreshToken: string; transactionId: string; email: string;
     tokenType: string; expiresIn: number; isRegistration: boolean; twoFA: boolean;
   }>('auth', '/public/oauth/exchange', { code, state });
-
-  saveTokens({
-    access_token: res.accessToken,
-    refresh_token: res.refreshToken,
-    token_type: res.tokenType,
-    expires_in: res.expiresIn,
-  });
 
   return {
     accessToken: res.accessToken,
@@ -160,12 +163,20 @@ export async function recoveryComplete(transactionId: string, password: string):
 }
 
 // ---------------------------------------------------------------------------
-// Sign-out — §1.4. Revoke, then clear locally regardless of whether the
-// revoke call succeeded. `tokenStore.revokeAndClearTokens` does both;
-// re-exported here so callers only ever import auth actions from one place.
+// Sign-out. No revoke endpoint is documented for the mini app's own access
+// token (there's no refresh token either — see `tokenStore.ts`'s own
+// comment), so this just clears local state. The Telegram↔platform binding
+// itself is unaffected server-side either way — tapping "Выход" only signs
+// this device out of the mini app locally; whether/how to also break the
+// binding (so a silent re-entry at next boot doesn't immediately undo the
+// sign-out) isn't specified anywhere and needs a product answer, not a
+// guessed API call.
 // ---------------------------------------------------------------------------
 
-export { revokeAndClearTokens as signOut } from '@/api/real/http/tokenStore.ts';
+export function signOut(): Promise<void> {
+  clearTokens();
+  return Promise.resolve();
+}
 
 // ---------------------------------------------------------------------------
 // Generic code verification — used only by the withdrawal-confirmation 2FA

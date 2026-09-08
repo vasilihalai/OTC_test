@@ -1,43 +1,52 @@
-import { authBasicFetch, formBody } from '@/api/real/http/authClient.ts';
-
 /**
- * Token lifecycle per api-integration.md §1.4: access token in memory +
- * `sessionStorage` (survives a WebView reload, not a fresh tab/relaunch),
- * refresh token in `localStorage` (survives both). Proactive refresh fires
- * at `expires_in - 60s`; a reactive refresh on the first 401 and the
- * proactive timer both funnel through the same `refreshTokens()`, so
- * parallel triggers share one in-flight request instead of firing N.
+ * Token lifecycle for the mini app's own access token, obtained from
+ * `authenticateMiniApp()` (`real/miniAppAuth.ts`) — never from `/oauth2/*`
+ * directly any more. That endpoint's own contract is explicit: **no refresh
+ * token for this client**. So unlike the standard OAuth `refresh_token`
+ * grant this store used before, "refreshing" here means calling
+ * `authenticateMiniApp(freshInitData)` again — the persisted Telegram↔
+ * platform binding on the backend is the durable credential, not anything
+ * stored locally. Access token lives in memory + `sessionStorage` only
+ * (survives a same-tab reload, not a fresh relaunch — a fresh relaunch just
+ * re-authenticates silently instead, see `index.tsx`).
  */
 
 const ACCESS_KEY = 'xruby-access-token';
 const EXPIRES_KEY = 'xruby-token-expires-at';
-const REFRESH_KEY = 'xruby-refresh-token';
 
 export interface TokenSet {
   accessToken: string;
-  refreshToken: string;
   /** Epoch ms. */
   expiresAt: number;
 }
 
-interface TokenResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number;
+export interface AccessTokenResponse {
+  accessToken: string;
+  expiresIn: number;
 }
 
-function toTokenSet(res: TokenResponse): TokenSet {
+function toTokenSet(res: AccessTokenResponse): TokenSet {
   return {
-    accessToken: res.access_token,
-    refreshToken: res.refresh_token,
-    expiresAt: Date.now() + res.expires_in * 1000,
+    accessToken: res.accessToken,
+    expiresAt: Date.now() + res.expiresIn * 1000,
   };
 }
 
 let current: TokenSet | null = null;
 let proactiveTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshPromise: Promise<TokenSet> | null = null;
+
+/**
+ * Set once at boot (`index.tsx`, real mode only) to how a lapsed access
+ * token gets replaced — always `() => authenticateMiniApp(getFreshInitData())`
+ * in practice, injected rather than imported directly so this module stays
+ * free of any Telegram/mini-app-specific concern.
+ */
+let reauthenticate: (() => Promise<AccessTokenResponse>) | null = null;
+
+export function setReauthenticator(fn: () => Promise<AccessTokenResponse>): void {
+  reauthenticate = fn;
+}
 
 function scheduleProactiveRefresh(): void {
   if (proactiveTimer) {
@@ -50,27 +59,25 @@ function scheduleProactiveRefresh(): void {
   proactiveTimer = setTimeout(() => void refreshTokens().catch(() => {}), delay);
 }
 
-/** Call once at boot (real mode only) to restore whatever survived a relaunch. */
+/** Call once at boot (real mode only) to restore whatever survived a same-tab reload, before deciding whether a network re-authenticate is even needed. */
 export function hydrateTokensFromStorage(): TokenSet | null {
-  const refreshToken = localStorage.getItem(REFRESH_KEY);
-  if (!refreshToken) {
+  const accessToken = sessionStorage.getItem(ACCESS_KEY);
+  const expiresAt = Number(sessionStorage.getItem(EXPIRES_KEY) ?? '0');
+  if (!accessToken || !expiresAt) {
     return null;
   }
-  const accessToken = sessionStorage.getItem(ACCESS_KEY) ?? '';
-  const expiresAt = Number(sessionStorage.getItem(EXPIRES_KEY) ?? '0');
-  current = { accessToken, refreshToken, expiresAt };
-  if (accessToken && expiresAt > Date.now()) {
+  current = { accessToken, expiresAt };
+  if (expiresAt > Date.now()) {
     scheduleProactiveRefresh();
   }
   return current;
 }
 
-export function saveTokens(res: TokenResponse): TokenSet {
+export function saveAccessToken(res: AccessTokenResponse): TokenSet {
   const tokens = toTokenSet(res);
   current = tokens;
   sessionStorage.setItem(ACCESS_KEY, tokens.accessToken);
   sessionStorage.setItem(EXPIRES_KEY, String(tokens.expiresAt));
-  localStorage.setItem(REFRESH_KEY, tokens.refreshToken);
   scheduleProactiveRefresh();
   return tokens;
 }
@@ -82,15 +89,10 @@ export function clearTokens(): void {
   }
   sessionStorage.removeItem(ACCESS_KEY);
   sessionStorage.removeItem(EXPIRES_KEY);
-  localStorage.removeItem(REFRESH_KEY);
 }
 
 export function getAccessToken(): string | null {
   return current?.accessToken || null;
-}
-
-export function hasSession(): boolean {
-  return !!current?.refreshToken;
 }
 
 /** Serialised — a proactive timer firing at the same moment as a reactive 401 share this one promise. */
@@ -98,16 +100,13 @@ export async function refreshTokens(): Promise<TokenSet> {
   if (refreshPromise) {
     return refreshPromise;
   }
-  if (!current?.refreshToken) {
-    throw new Error('No refresh token to refresh with');
+  if (!reauthenticate) {
+    throw new Error('No reauthenticator configured');
   }
+  const reauth = reauthenticate;
   refreshPromise = (async () => {
-    const res = await authBasicFetch<TokenResponse>(
-      '/oauth2/token',
-      formBody({ grant_type: 'refresh_token', refresh_token: current.refreshToken }),
-      'application/x-www-form-urlencoded',
-    );
-    return saveTokens(res);
+    const res = await reauth();
+    return saveAccessToken(res);
   })();
   try {
     return await refreshPromise;
@@ -116,7 +115,7 @@ export async function refreshTokens(): Promise<TokenSet> {
   }
 }
 
-/** Ensures the access token is valid for at least the next minute, refreshing first if not. Returns `null` if there's nothing to refresh with. */
+/** Ensures the access token is valid for at least the next minute, re-authenticating first if not. Returns `null` if there's nothing to refresh with (never authenticated this boot, or re-authentication just failed). */
 export async function ensureFreshAccessToken(): Promise<string | null> {
   if (!current) {
     return null;
@@ -131,28 +130,3 @@ export async function ensureFreshAccessToken(): Promise<string | null> {
     return null;
   }
 }
-
-/**
- * `POST /oauth2/revoke` then clear locally regardless of whether the call
- * succeeded — api-integration.md §1.4: "a user who taps 'Выход' must end up
- * signed out regardless."
- */
-export async function revokeAndClearTokens(): Promise<void> {
-  const refreshToken = current?.refreshToken;
-  try {
-    if (refreshToken) {
-      await authBasicFetch<void>(
-        '/oauth2/revoke',
-        formBody({ token: refreshToken, token_type_hint: 'refresh_token' }),
-        'application/x-www-form-urlencoded',
-      );
-    }
-  } catch {
-    // Ignored — see doc comment above.
-  } finally {
-    clearTokens();
-  }
-}
-
-export { toTokenSet };
-export type { TokenResponse };

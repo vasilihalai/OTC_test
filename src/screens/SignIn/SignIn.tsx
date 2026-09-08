@@ -20,7 +20,6 @@ import {
 import type { AuthOtpSource, ClientType } from '@/api/index.ts';
 import { useSessionStore } from '@/store/session.ts';
 import { useModalStore } from '@/store/modal.ts';
-import { markInitDataBindPending } from '@/api/http.ts';
 import { notifyError } from '@/telegram/adapter.ts';
 import { AppleIcon, GoogleIcon } from '@/components/SocialIcons/SocialIcons.tsx';
 import { BuildingIcon, PersonIcon } from '@/screens/SignIn/icons.tsx';
@@ -92,8 +91,6 @@ export function SignIn({ variant }: SignInProps) {
     try {
       const session = await signInConfirmOtp({ ...params, email, clientType });
       setSession(session);
-      // §2.4 — one shot, sent on the first authenticated request after this.
-      markInitDataBindPending();
     } catch (err) {
       if (err instanceof MockVerifyCodeError) {
         throw new Error(err.code === 'RATE_LIMIT' ? ru.verification.errorRateLimit : ru.verification.errorCodeInvalid);

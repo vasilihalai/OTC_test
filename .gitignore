@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Real credentials — VITE_AUTH_BASIC, VITE_API_BASE_URL, etc. .env.example
+# stays tracked as the template.
+.env
+.env.*
+!.env.example
+
 # Local Claude Code tooling config
 .claude/
 
