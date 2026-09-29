@@ -27,6 +27,14 @@ function requestId(): string {
 
 /** POST with `Authorization: Basic <client:secret>` — used only by the four oauth2/* endpoints above. */
 export async function authBasicFetch<T>(path: string, body: BodyInit, contentType: string): Promise<T> {
+  if (!BASIC) {
+    // Backend-confirmed failure mode: an empty/missing Basic header gets rejected by
+    // Spring's client check before the request body (grant_type/otp/transactionId) is
+    // even looked at — surfacing as an opaque 401 with no OTP-related detail. Fail loud
+    // here instead, since VITE_AUTH_BASIC missing from .env is a much more likely cause
+    // than a genuine credentials error.
+    throw new Error('VITE_AUTH_BASIC is not set — cannot call ' + path + ' (see .env.example).');
+  }
   const reqId = requestId();
   const res = await fetch(serviceUrl('auth', path), {
     method: 'POST',

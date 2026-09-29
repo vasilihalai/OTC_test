@@ -34,6 +34,12 @@ export interface OtpIssueResult {
  * (§5.2/§5.3) — reconcile here if the backend calls it something else.
  */
 export async function signInRequestOtp(email: string, password: string, clientType: ClientType): Promise<OtpIssueResult> {
+  // Backend-confirmed: omitting `merchant` for a user who isn't on the XRUBY
+  // merchant makes the backend look the user up under XRUBY anyway and fail
+  // with ER_ATH0003. `VITE_AUTH_MERCHANT_ID` is unset by default (XRUBY-native
+  // test accounts don't need it) — set it once a non-XRUBY test account needs
+  // exercising.
+  const merchantId = import.meta.env.VITE_AUTH_MERCHANT_ID;
   const res = await authBasicFetch<{ success: boolean; timestamp: string; transactionId: string; source: AuthOtpSource }>(
     '/oauth2/otp',
     JSON.stringify({
@@ -41,6 +47,7 @@ export async function signInRequestOtp(email: string, password: string, clientTy
       target: email,
       password,
       accountType: accountType(clientType),
+      ...(merchantId ? { merchant: merchantId } : {}),
     }),
     'application/json',
   );
