@@ -22,6 +22,7 @@ export const ru = {
     businessAccountLink: 'Войти в бизнес-аккаунт',
     personalAccountLink: 'Войти в личный аккаунт',
     errorEmailInvalid: 'Введите корректный email',
+    errorNetwork: 'Не удалось связаться с сервером. Попробуйте ещё раз',
   },
   verification: {
     title: 'Введите код из письма',

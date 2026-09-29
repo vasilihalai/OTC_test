@@ -80,6 +80,11 @@ export function SignIn({ variant }: SignInProps) {
         setEmailError(ru.signIn.errorEmailInvalid);
       } else if (err instanceof ApiError) {
         setEmailError(mapApiError(err));
+      } else {
+        // fetch() rejecting (CORS, offline, DNS) never produces an ApiError — without
+        // this the button just stops spinning and nothing on screen explains why.
+        console.error('[SignIn] request OTP failed', err);
+        setEmailError(ru.signIn.errorNetwork);
       }
       notifyError();
     } finally {
@@ -98,7 +103,8 @@ export function SignIn({ variant }: SignInProps) {
       if (err instanceof ApiError) {
         throw new Error(mapApiError(err));
       }
-      throw err;
+      console.error('[SignIn] confirm OTP failed', err);
+      throw new Error(ru.signIn.errorNetwork);
     }
   }
 
@@ -109,7 +115,8 @@ export function SignIn({ variant }: SignInProps) {
       if (err instanceof ApiError) {
         throw new Error(mapApiError(err));
       }
-      throw err;
+      console.error('[SignIn] resend OTP failed', err);
+      throw new Error(ru.signIn.errorNetwork);
     }
   }
 
