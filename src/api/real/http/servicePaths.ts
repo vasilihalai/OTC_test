@@ -1,18 +1,16 @@
 /**
  * The four backend services this app talks to, per api-integration.md §1.1 —
  * one gateway origin (`VITE_API_BASE_URL`), then a per-service path prefix.
- * `userAccount` and `balance` share the `/api/v1` prefix but are different
- * upstreams behind the gateway (routed by path segment) — kept as separate
- * `Service` values, not merged, so a per-service base URL override is
- * possible later without touching call sites (§1.1's explicit requirement).
+ * The gateway routes by the leading segment (backend-confirmed; the bare
+ * `/api/...` prefixes 404 on dev).
  */
 export type Service = 'auth' | 'userAccount' | 'balance' | 'financial';
 
 const PREFIX: Record<Service, string> = {
   auth: '/auth/api/v1',
-  userAccount: '/api/v1',
-  balance: '/api/v1',
-  financial: '/api',
+  userAccount: '/users/api/v1',
+  balance: '/balance/api/v1',
+  financial: '/operations/api',
 };
 
 const OVERRIDE_ENV: Record<Service, string | undefined> = {
