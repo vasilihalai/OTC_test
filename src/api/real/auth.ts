@@ -26,12 +26,9 @@ export interface OtpIssueResult {
 
 /**
  * An account has exactly one second factor configured, never both — the
- * modal shows a single code field, picked by this response's `source`
- * (product decision, overriding an earlier "email always, plus an
- * authenticator code when enabled" reading of §2.1). The real field name
- * for this isn't documented anywhere; assumed to be `source` to match the
- * withdrawal OTP contract's own field of the same name and purpose
- * (§5.2/§5.3) — reconcile here if the backend calls it something else.
+ * modal shows a single code field. Backend-confirmed: the response says
+ * which via `isAuthenticatorConnected` (true → authenticator-app code,
+ * otherwise the emailed code); there is no `source` field.
  */
 export async function signInRequestOtp(email: string, password: string, clientType: ClientType): Promise<OtpIssueResult> {
   // Backend-confirmed: omitting `merchant` for a user who isn't on the XRUBY
@@ -40,7 +37,7 @@ export async function signInRequestOtp(email: string, password: string, clientTy
   // test accounts don't need it) — set it once a non-XRUBY test account needs
   // exercising.
   const merchantId = import.meta.env.VITE_AUTH_MERCHANT_ID;
-  const res = await authBasicFetch<{ success: boolean; timestamp: string; transactionId: string; source: AuthOtpSource }>(
+  const res = await authBasicFetch<{ success: boolean; timestamp: string; transactionId: string; isAuthenticatorConnected?: boolean }>(
     '/oauth2/otp',
     JSON.stringify({
       grant_type: 'email_password',
@@ -51,7 +48,7 @@ export async function signInRequestOtp(email: string, password: string, clientTy
     }),
     'application/json',
   );
-  return { transactionId: res.transactionId, source: res.source };
+  return { transactionId: res.transactionId, source: res.isAuthenticatorConnected ? 'authenticator' : 'email' };
 }
 
 export interface OtpConfirmParams {
