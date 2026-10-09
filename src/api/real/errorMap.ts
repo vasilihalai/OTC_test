@@ -16,6 +16,11 @@ const KNOWN: Record<string, string> = {
   INVALID_CREDENTIALS: 'Неверный email или пароль',
   INVALID_OTP: 'Неверный код',
   TOO_MANY_ATTEMPTS: 'Слишком много попыток, подождите немного',
+  // Seen on dev: /oauth2/otp answers this for any email/password/accountType mismatch,
+  // deliberately not distinguishing an unknown email from a wrong password.
+  ER_ATH0003: 'Неверный email или пароль',
+  // Backend-confirmed: /authenticate with a missing/invalid platform token or no binding.
+  ER_SYS0006: 'Не удалось войти через Telegram. Попробуйте ещё раз',
 };
 
 // Test plan §1/§9.8: "показывать на экране ошибки короткий код запроса ...
