@@ -23,6 +23,7 @@ import * as realWithdrawals from '@/api/real/withdrawals.ts';
 import * as realTransfers from '@/api/real/transfers.ts';
 import * as realCertificate from '@/api/real/certificate.ts';
 import { authenticateMiniApp } from '@/api/real/miniAppAuth.ts';
+import { ApiError } from '@/api/http.ts';
 import { saveAccessToken } from '@/api/real/http/tokenStore.ts';
 import { getFreshInitData } from '@/telegram/initData.ts';
 import { setLastClientType } from '@/lib/lastClientType.ts';
@@ -64,7 +65,24 @@ export async function signInConfirmOtp(params: { transactionId: string; otp: str
   if (!initData) {
     throw new Error('No Telegram initData available to complete sign-in');
   }
-  const result = await authenticateMiniApp(initData, platformAccessToken);
+  let result;
+  try {
+    result = await authenticateMiniApp(initData, platformAccessToken);
+  } catch (err) {
+    if (!(err instanceof ApiError)) {
+      throw err;
+    }
+    // The OTP is already spent by now, so retrying the code can't help; the backend's
+    // initData TTL counts from app launch, so the age is the first thing to check.
+    const authDate = Number(new URLSearchParams(initData).get('auth_date'));
+    console.error('[signIn] Telegram bind failed', {
+      code: err.code,
+      message: err.message,
+      requestId: err.requestId,
+      initDataAgeSeconds: Math.round(Date.now() / 1000 - authDate),
+    });
+    throw new ApiError(err.httpStatus, 'TELEGRAM_BIND_FAILED', err.message, err.requestId, err.raw);
+  }
   saveAccessToken(result);
   setLastClientType(params.clientType);
   return { email: params.email, clientType: params.clientType };

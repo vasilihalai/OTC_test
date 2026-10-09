@@ -19,8 +19,9 @@ const KNOWN: Record<string, string> = {
   // Seen on dev: /oauth2/otp answers this for any email/password/accountType mismatch,
   // deliberately not distinguishing an unknown email from a wrong password.
   ER_ATH0003: 'Неверный email или пароль',
-  // Backend-confirmed: /authenticate with a missing/invalid platform token or no binding.
-  ER_SYS0006: 'Не удалось войти через Telegram. Попробуйте ещё раз',
+  // Set by api/index.ts's signInConfirmOtp, not the backend: its /authenticate errors all come
+  // back as the generic ER_SYS0006, which other endpoints use for plain validation failures too.
+  TELEGRAM_BIND_FAILED: 'Не удалось привязать Telegram. Закройте и снова откройте приложение, затем войдите ещё раз',
 };
 
 // Test plan §1/§9.8: "показывать на экране ошибки короткий код запроса ...
