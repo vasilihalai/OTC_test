@@ -1,6 +1,7 @@
 import type { Deal, DealDirection, OtcAccessResult, Stats } from '@/api/types.ts';
 import { apiFetch } from '@/api/http.ts';
 import { ApiError } from '@/api/real/http/apiError.ts';
+import { describeShape } from '@/api/real/http/responseShape.ts';
 import { useToastStore } from '@/store/toast.ts';
 import { formatDealDate } from '@/lib/date.ts';
 import { formatAmount } from '@/lib/money.ts';
@@ -14,8 +15,15 @@ import { ru } from '@/i18n/ru.ts';
  * it."
  */
 export async function getOtcAccess(): Promise<OtcAccessResult> {
-  const res = await apiFetch<{ result: OtcAccessResult }>('/v1/otc/access', {}, false, 'financial');
-  return res.result;
+  const res = await apiFetch<({ result?: Partial<OtcAccessResult> } & Partial<OtcAccessResult>) | null>(
+    '/v1/otc/access', {}, false, 'financial',
+  );
+  const access = res?.result ?? res;
+  if (typeof access?.enabled !== 'boolean') {
+    console.error('[otc] unexpected /v1/otc/access response shape', describeShape(res));
+    throw new Error('Unexpected OTC access response shape');
+  }
+  return { enabled: access.enabled, available: access.available ?? true, reasons: access.reasons ?? [] };
 }
 
 interface DashboardCounter {

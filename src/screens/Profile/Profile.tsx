@@ -187,6 +187,13 @@ export function Profile() {
     }
   }
 
+  // Sign-out must never depend on the profile loading.
+  const signOutRow = (
+    <div className="profile__panel2">
+      <SettingRow icon={<LogoutIcon/>} label={ru.profile.signOutAction} danger onClick={handleSignOut}/>
+    </div>
+  );
+
   if (error) {
     return (
       <div className="profile">
@@ -194,6 +201,7 @@ export function Profile() {
           <p className="profile__error">{ru.profile.errorTitle}</p>
           <Button variant="secondary" onClick={() => void load()}>{ru.profile.retryAction}</Button>
         </Panel>
+        {signOutRow}
       </div>
     );
   }
@@ -207,6 +215,7 @@ export function Profile() {
             <Skeleton height={120} radius={8}/>
           </div>
         </div>
+        {signOutRow}
       </div>
     );
   }

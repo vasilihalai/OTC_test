@@ -2,6 +2,7 @@ import type { ClientType, SecurityLevel, User } from '@/api/types.ts';
 import { apiFetch } from '@/api/http.ts';
 import { getOtcAccess } from '@/api/real/otc.ts';
 import { toOtcAccessReason } from '@/lib/otcAccess.ts';
+import { describeShape } from '@/api/real/http/responseShape.ts';
 
 /**
  * api-integration.md §3 — `GET /secured/user/profile` (`userAccount`
@@ -28,11 +29,7 @@ async function fetchProfile(): Promise<RawProfile> {
   );
   const profile = body?.result ?? body;
   if (!profile?.userPublicId) {
-    const shape = Object.fromEntries(Object.entries(body ?? {}).map(([key, value]) => [
-      key,
-      value !== null && typeof value === 'object' ? Object.keys(value as object) : typeof value,
-    ]));
-    console.error('[profile] unexpected /secured/user/profile response shape', shape);
+    console.error('[profile] unexpected /secured/user/profile response shape', describeShape(body));
     throw new Error('Unexpected profile response shape');
   }
   return profile as RawProfile;
@@ -47,18 +44,24 @@ async function fetchProfile(): Promise<RawProfile> {
 export async function getUser(_clientType: ClientType): Promise<User> {
   const [profile, access] = await Promise.all([
     fetchProfile(),
-    getOtcAccess(),
+    // Only feeds the verified badge and the OTC gate — a failure here must not take the
+    // whole profile down. Unknown access falls back to GRANTED: the backend still enforces
+    // OTC access on every OTC call, while a wrong NOT_ELIGIBLE would lock the user out.
+    getOtcAccess().catch((err: unknown) => {
+      console.error('[profile] OTC access check failed', err);
+      return undefined;
+    }),
   ]);
 
   return {
     clientName: profile.name,
     clientType: _clientType,
-    verified: access.enabled,
+    verified: access?.enabled ?? false,
     securityLevel: profile.securityLevel,
-    otcAccess: toOtcAccessReason(access),
+    otcAccess: access ? toOtcAccessReason(access) : 'GRANTED',
     email: profile.email,
     phone: [profile.phoneCode, profile.phoneNumber].filter(Boolean).join(' '),
-    userId: profile.userPublicId,
+    userId: compactPublicId(profile.userPublicId),
     // Not present anywhere in api-integration.md's field mapping (§3) — the
     // profile endpoint doesn't carry them, and nothing in the doc says where
     // else they'd come from. Left empty rather than guessed; Profile's
@@ -76,7 +79,19 @@ export async function getUser(_clientType: ClientType): Promise<User> {
   };
 }
 
-/** `userPublicId` — §4: "profile first, balances second — sequence them, do not fire in parallel," reused by `real/balances.ts` for both `getAssets` and `getAccounts` so neither has to re-derive it differently. */
+/** Seen on dev: `userPublicId` arrives display-formatted, e.g. "2F88 2AD2 53C7 4704 A28F 4374 AE78 23FC". */
+function compactPublicId(userPublicId: string): string {
+  return userPublicId.replace(/\s+/g, '');
+}
+
+/**
+ * `userPublicId` as a canonical UUID — §4: "profile first, balances second — sequence them, do
+ * not fire in parallel." The balances path rejected the spaced display form with a 400; with the
+ * spaces gone it is 32 hex digits, i.e. a UUID, so it's sent in the standard dashed form.
+ */
 export async function getCurrentUserId(): Promise<string> {
-  return (await fetchProfile()).userPublicId;
+  const id = compactPublicId((await fetchProfile()).userPublicId);
+  return /^[0-9a-f]{32}$/i.test(id)
+    ? `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`.toLowerCase()
+    : id;
 }

@@ -1,5 +1,6 @@
 import type { AuthOtpSource, ClientType, SocialProvider } from '@/api/types.ts';
 import { authBasicFetch, formBody } from '@/api/real/http/authClient.ts';
+import { describeShape } from '@/api/real/http/responseShape.ts';
 import { publicPost } from '@/api/real/http/publicClient.ts';
 import { clearTokens } from '@/api/real/http/tokenStore.ts';
 import { openExternalLink } from '@/telegram/adapter.ts';
@@ -28,7 +29,9 @@ export interface OtpIssueResult {
  * An account has exactly one second factor configured, never both — the
  * modal shows a single code field. Backend-confirmed: the response says
  * which via `isAuthenticatorConnected` (true → authenticator-app code,
- * otherwise the emailed code); there is no `source` field.
+ * otherwise the emailed code); there is no `source` field. Also read as
+ * `authenticatorConnected` — Jackson drops the `is` prefix from a boolean
+ * getter, and on dev an authenticator account still got the email prompt.
  */
 export async function signInRequestOtp(email: string, password: string, clientType: ClientType): Promise<OtpIssueResult> {
   // Backend-confirmed: omitting `merchant` for a user who isn't on the XRUBY
@@ -37,7 +40,13 @@ export async function signInRequestOtp(email: string, password: string, clientTy
   // test accounts don't need it) — set it once a non-XRUBY test account needs
   // exercising.
   const merchantId = import.meta.env.VITE_AUTH_MERCHANT_ID;
-  const res = await authBasicFetch<{ success: boolean; timestamp: string; transactionId: string; isAuthenticatorConnected?: boolean }>(
+  const res = await authBasicFetch<{
+    success: boolean;
+    timestamp: string;
+    transactionId: string;
+    isAuthenticatorConnected?: boolean;
+    authenticatorConnected?: boolean;
+  }>(
     '/oauth2/otp',
     JSON.stringify({
       grant_type: 'email_password',
@@ -48,7 +57,11 @@ export async function signInRequestOtp(email: string, password: string, clientTy
     }),
     'application/json',
   );
-  return { transactionId: res.transactionId, source: res.isAuthenticatorConnected ? 'authenticator' : 'email' };
+  const authenticatorConnected = res.isAuthenticatorConnected ?? res.authenticatorConnected;
+  if (typeof authenticatorConnected !== 'boolean') {
+    console.error('[signIn] /oauth2/otp response has no authenticator flag', describeShape(res));
+  }
+  return { transactionId: res.transactionId, source: authenticatorConnected ? 'authenticator' : 'email' };
 }
 
 export interface OtpConfirmParams {
