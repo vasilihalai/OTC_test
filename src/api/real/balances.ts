@@ -24,8 +24,9 @@ async function fetchBalancesData(): Promise<BalancesData> {
   // (rather than threading a userId through every caller) — an accepted
   // extra request, same trade-off as `getUser`'s access-derived `verified`.
   const userId = await getCurrentUserId();
-  const res = await apiFetch<{ result: BalancesData }>(`/users/balances/${userId}`, {}, false, 'balance');
-  return res.result;
+  // Envelope unconfirmed for this service — the profile one turned out to be unwrapped.
+  const res = await apiFetch<{ result?: BalancesData } & Partial<BalancesData>>(`/users/balances/${userId}`, {}, false, 'balance');
+  return (res.result ?? res) as BalancesData;
 }
 
 /**

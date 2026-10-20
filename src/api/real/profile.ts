@@ -17,6 +17,27 @@ interface RawProfile {
   phoneNumber?: string;
 }
 
+/**
+ * Seen on dev: this endpoint answers 200 without the `{ result }` envelope the
+ * financial service uses, so both shapes are accepted. On anything else the
+ * field names (not values) are logged, since they're the only clue.
+ */
+async function fetchProfile(): Promise<RawProfile> {
+  const body = await apiFetch<({ result?: RawProfile } & Partial<RawProfile>) | null>(
+    '/secured/user/profile', {}, false, 'userAccount',
+  );
+  const profile = body?.result ?? body;
+  if (!profile?.userPublicId) {
+    const shape = Object.fromEntries(Object.entries(body ?? {}).map(([key, value]) => [
+      key,
+      value !== null && typeof value === 'object' ? Object.keys(value as object) : typeof value,
+    ]));
+    console.error('[profile] unexpected /secured/user/profile response shape', shape);
+    throw new Error('Unexpected profile response shape');
+  }
+  return profile as RawProfile;
+}
+
 // §3: "There is no `verified: boolean` in the contract" — derived from
 // `/v1/otc/access`'s `enabled` flag instead, per the doc's own instruction
 // (question B6, pending a `states` key the backend hasn't confirmed yet).
@@ -25,7 +46,7 @@ interface RawProfile {
 // a guessed one.
 export async function getUser(_clientType: ClientType): Promise<User> {
   const [profile, access] = await Promise.all([
-    apiFetch<{ result: RawProfile }>('/secured/user/profile', {}, false, 'userAccount').then((r) => r.result),
+    fetchProfile(),
     getOtcAccess(),
   ]);
 
@@ -57,6 +78,5 @@ export async function getUser(_clientType: ClientType): Promise<User> {
 
 /** `userPublicId` — §4: "profile first, balances second — sequence them, do not fire in parallel," reused by `real/balances.ts` for both `getAssets` and `getAccounts` so neither has to re-derive it differently. */
 export async function getCurrentUserId(): Promise<string> {
-  const res = await apiFetch<{ result: RawProfile }>('/secured/user/profile', {}, false, 'userAccount');
-  return res.result.userPublicId;
+  return (await fetchProfile()).userPublicId;
 }

@@ -44,6 +44,27 @@
   margin: 0;
 }
 
+.home__load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home__load-error-text {
+  flex: 1;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.home__load-error .button {
+  width: auto;
+  flex-shrink: 0;
+  padding-inline: 20px;
+}
+
 .home__stats {
   display: flex;
   gap: 16px;

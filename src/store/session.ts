@@ -65,6 +65,9 @@ export function useRequireOtcAccess(): void {
       if (!cancelled && user.otcAccess !== 'GRANTED') {
         navigate('/otc-unavailable', { replace: true, state: { otcAccess: user.otcAccess } });
       }
+    }).catch((err: unknown) => {
+      // The screen's own load surfaces the failure; don't redirect on a guess.
+      console.error('[session] OTC access check failed', err);
     });
     return () => {
       cancelled = true;

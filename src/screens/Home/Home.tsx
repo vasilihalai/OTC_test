@@ -9,6 +9,7 @@ import { SegmentedControl } from '@/components/SegmentedControl/SegmentedControl
 import { TableRow } from '@/components/TableRow/TableRow.tsx';
 import { EmptyState } from '@/components/EmptyState/EmptyState.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
+import { Button } from '@/components/Button/Button.tsx';
 import { getAssets, getDeals, getStats, getUser } from '@/api/index.ts';
 import type { Asset, Deal, Stats, User } from '@/api/index.ts';
 import { useRequireOtcAccess, useRequireSession } from '@/store/session.ts';
@@ -32,29 +33,41 @@ export function Home() {
   const [deals, setDeals] = useState<Deal[]>();
   const [assets, setAssets] = useState<Asset[]>();
   const [assetsLoading, setAssetsLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  const load = useCallback(async () => {
-    const [userData, statsData, dealsData] = await Promise.all([
-      getUser(clientType),
-      getStats(),
-      getDeals(),
-    ]);
-    setUser(userData);
-    setStats(statsData);
-    setDeals(dealsData);
-  }, [clientType]);
+  const fail = useCallback((err: unknown) => {
+    console.error('[Home] load failed', err);
+    setLoadFailed(true);
+  }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Independent on purpose: one failing request must not leave every widget on its skeleton.
+  const load = useCallback(() => {
+    void getUser(clientType).then(setUser).catch(fail);
+    void getStats().then(setStats).catch(fail);
+    void getDeals().then(setDeals).catch(fail);
+  }, [clientType, fail]);
 
-  useEffect(() => {
+  const loadAssets = useCallback(() => {
     setAssetsLoading(true);
     void getAssets(selectedGroup).then((data) => {
       setAssets(data);
       setAssetsLoading(false);
-    });
-  }, [selectedGroup, balancesVersion]);
+    }).catch(fail);
+  }, [selectedGroup, fail]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    loadAssets();
+  }, [loadAssets, balancesVersion]);
+
+  function retry() {
+    setLoadFailed(false);
+    load();
+    loadAssets();
+  }
 
   const positiveAssets = (assets ?? []).filter((a) => Number(a.balance) > 0);
   const hiddenZeroBalance = (assets ?? []).length > positiveAssets.length;
@@ -68,6 +81,12 @@ export function Home() {
             <p className="home__hero-subtitle">{ru.home.heroSubtitle}</p>
             <p className="home__desk-hours">{ru.home.deskHours}</p>
           </div>
+          {loadFailed && (
+            <div className="home__load-error">
+              <p className="home__load-error-text">{ru.common.errorGeneric}</p>
+              <Button variant="secondary" size="compact" onClick={retry}>{ru.common.retryAction}</Button>
+            </div>
+          )}
           {user ? <CompanyChip>{user.clientName}</CompanyChip> : <Skeleton width={140} height={22} radius={8}/>}
           <div className="home__stats">
             {stats ? (

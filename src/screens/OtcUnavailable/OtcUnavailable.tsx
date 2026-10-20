@@ -20,7 +20,9 @@ export function OtcUnavailable() {
 
   useEffect(() => {
     if (session) {
-      void getUser(session.clientType).then(setUser);
+      void getUser(session.clientType).then(setUser).catch((err: unknown) => {
+        console.error('[OtcUnavailable] user load failed', err);
+      });
     }
   }, [session]);
 
