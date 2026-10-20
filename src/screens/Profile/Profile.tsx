@@ -223,15 +223,17 @@ export function Profile() {
   return (
     <div className="profile">
       <div className="profile__panel1">
-        <div className="profile__title-row">
-          <h1 className="profile__name">{user.clientName}</h1>
-          {user.verified && (
-            <span className="profile__verified-badge">
-              <VerifiedIcon/>
-              {ru.profile.verifiedBadge}
-            </span>
-          )}
-        </div>
+        {(user.clientName || user.verified) && (
+          <div className="profile__title-row">
+            {user.clientName && <h1 className="profile__name">{user.clientName}</h1>}
+            {user.verified && (
+              <span className="profile__verified-badge">
+                <VerifiedIcon/>
+                {ru.profile.verifiedBadge}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="profile__details-card">
           <DetailRow label={ru.profile.emailRow} value={user.email} display={maskEmail(user.email)} copyValue={user.email}/>

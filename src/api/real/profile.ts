@@ -10,7 +10,12 @@ import { describeShape } from '@/api/real/http/responseShape.ts';
  * real call is session-derived and ignores it (per §3's own note).
  */
 interface RawProfile {
-  name: string;
+  name?: string;
+  fullName?: string;
+  companyName?: string;
+  lastName?: string;
+  firstName?: string;
+  middleName?: string;
   email: string;
   userPublicId: string;
   securityLevel: SecurityLevel;
@@ -32,10 +37,16 @@ async function fetchProfile(): Promise<RawProfile> {
     console.error('[profile] unexpected /secured/user/profile response shape', describeShape(body));
     throw new Error('Unexpected profile response shape');
   }
-  if (!profile.name) {
-    console.warn('[profile] no `name` in /secured/user/profile — fields:', describeShape(body));
+  if (!displayName(profile as RawProfile)) {
+    console.warn('[profile] no name field in /secured/user/profile — fields:', describeShape(body));
   }
   return profile as RawProfile;
+}
+
+/** §3 says `name`; dev's profile has none, so the usual alternatives are tried — full name for a person, company name for a business. */
+function displayName(profile: RawProfile): string {
+  return profile.name || profile.fullName || profile.companyName
+    || [profile.lastName, profile.firstName, profile.middleName].filter(Boolean).join(' ');
 }
 
 // §3: "There is no `verified: boolean` in the contract" — derived from
@@ -57,7 +68,7 @@ export async function getUser(_clientType: ClientType): Promise<User> {
   ]);
 
   return {
-    clientName: profile.name,
+    clientName: displayName(profile),
     clientType: _clientType,
     verified: access?.enabled ?? false,
     securityLevel: profile.securityLevel,

@@ -12,12 +12,8 @@ interface BalanceItem {
   type: 'CRYPTO' | 'FIAT';
 }
 
-interface BalancesData {
-  totalBalance: number;
-  totalBalanceFiat: number;
-  totalBalanceCrypto: number;
-  balances: Record<string, { list: BalanceItem[] }>;
-}
+/** Account key → its items, in response order (first = deposit, see `accountKeys`). */
+type AccountBalances = Record<string, BalanceItem[]>;
 
 /**
  * The platform user id is the access token's `sub`. Not the profile's `userPublicId` — on dev
@@ -35,24 +31,63 @@ async function currentUserId(): Promise<string> {
   return sub;
 }
 
-async function fetchBalancesData(): Promise<BalancesData> {
+const isItemList = (value: unknown): value is BalanceItem[] =>
+  Array.isArray(value) && value.every((item) => typeof (item as Partial<BalanceItem> | null)?.coin === 'string');
+
+/**
+ * §4 documents `balances: { [account]: { list: BalanceItem[] } }`, but dev answers 200 with a body
+ * that doesn't parse as that. Accepted: that shape, `{ [account]: BalanceItem[] }`, a flat
+ * `BalanceItem[]` (as `balances` or as the whole result), and an explicit `null` for an account
+ * with nothing on it yet. Anything else logs its field names and throws.
+ */
+function toAccountBalances(data: unknown): AccountBalances | undefined {
+  if (data === null) {
+    return {};
+  }
+  let raw: unknown = data;
+  if (!Array.isArray(data)) {
+    raw = typeof data === 'object' ? (data as { balances?: unknown }).balances : undefined;
+  }
+  if (raw === null) {
+    return {};
+  }
+  if (isItemList(raw)) {
+    return { default: raw };
+  }
+  if (raw === undefined || typeof raw !== 'object') {
+    return undefined;
+  }
+  const accounts: AccountBalances = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const list = isItemList(value) ? value : (value as { list?: unknown } | null)?.list ?? null;
+    if (list === null) {
+      accounts[key] = [];
+    } else if (isItemList(list)) {
+      accounts[key] = list;
+    } else {
+      return undefined;
+    }
+  }
+  return accounts;
+}
+
+async function fetchBalancesData(): Promise<AccountBalances> {
   const userId = await currentUserId();
-  // Envelope unconfirmed for this service — the profile one turned out to be unwrapped.
-  const res = await apiFetch<({ result?: BalancesData } & Partial<BalancesData>) | null>(`/users/balances/${userId}`, {}, false, 'balance');
-  const data = res?.result ?? res;
-  const accounts = data?.balances;
-  const valid = accounts !== null && typeof accounts === 'object'
-    && Object.values(accounts).every((account) => Array.isArray(account?.list));
-  if (!valid) {
-    const firstAccount = accounts && typeof accounts === 'object' ? Object.values(accounts)[0] : undefined;
+  const res = await apiFetch<{ result?: unknown } | null>(`/users/balances/${userId}`, {}, false, 'balance');
+  const data = res !== null && typeof res === 'object' && 'result' in res ? res.result : res;
+  const accounts = toAccountBalances(data);
+  if (!accounts) {
+    const balances = (data as { balances?: unknown } | null)?.balances;
+    const firstAccount: unknown = balances && typeof balances === 'object' ? Object.values(balances)[0] : undefined;
     console.error('[balances] unexpected response shape', {
       body: describeShape(res),
       data: describeShape(data),
+      balances: describeShape(balances),
       firstAccount: describeShape(firstAccount),
     });
     throw new Error('Unexpected balances response shape');
   }
-  return data as BalancesData;
+  return accounts;
 }
 
 /**
@@ -62,8 +97,8 @@ async function fetchBalancesData(): Promise<BalancesData> {
  * deposit account." Both `getAssets` and `getAccounts` below pick account(s)
  * this same way, not by a hardcoded `'deposit'`/`'trading'` string key.
  */
-function accountKeys(data: BalancesData): string[] {
-  return Object.keys(data.balances);
+function accountKeys(data: AccountBalances): string[] {
+  return Object.keys(data);
 }
 
 // The balance item schema (§4) is coin/totalAmount/availableBalance/frozen/
@@ -78,10 +113,10 @@ const ASSET_NAMES: Record<string, string> = {
 export async function getAssets(group: AssetGroup): Promise<Asset[]> {
   const data = await fetchBalancesData();
   const key = accountKeys(data)[0];
-  const list = key ? data.balances[key].list : [];
+  const list = key ? data[key] : [];
   const wantedType = group.toUpperCase();
   return list
-    .filter((item) => item.type === wantedType)
+    .filter((item) => String(item.type).toUpperCase() === wantedType)
     .filter((item) => item.totalAmount !== 0) // §4: "Hide rows where totalAmount === 0."
     .map((item) => ({
       ticker: item.coin,
@@ -100,7 +135,7 @@ export async function getAccounts(): Promise<Accounts> {
     if (!key) {
       return {};
     }
-    return Object.fromEntries(data.balances[key].list.map((item) => [item.coin, String(item.availableBalance)]));
+    return Object.fromEntries(data[key].map((item) => [item.coin, String(item.availableBalance)]));
   };
   return { deposit: toRecord(depositKey), trading: toRecord(tradingKey) };
 }
