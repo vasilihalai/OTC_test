@@ -1,6 +1,7 @@
 import type { Accounts, Asset, AssetGroup, TransferAccount } from '@/api/types.ts';
 import { apiFetch } from '@/api/http.ts';
-import { getCurrentUserId } from '@/api/real/profile.ts';
+import { ensureFreshAccessToken } from '@/api/real/http/tokenStore.ts';
+import { describeShape } from '@/api/real/http/responseShape.ts';
 
 /** api-integration.md §4 — `GET /users/balances/{user-id}` (`balance` service). */
 interface BalanceItem {
@@ -18,15 +19,40 @@ interface BalancesData {
   balances: Record<string, { list: BalanceItem[] }>;
 }
 
+/**
+ * The platform user id is the access token's `sub`. Not the profile's `userPublicId` — on dev
+ * that's a different UUID (display id), and the balances path rejected it.
+ */
+async function currentUserId(): Promise<string> {
+  const token = await ensureFreshAccessToken();
+  const payload = token?.split('.')[1];
+  const sub = payload
+    ? (JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { sub?: unknown }).sub
+    : undefined;
+  if (typeof sub !== 'string' || !sub) {
+    throw new Error('No user id (sub) in the access token');
+  }
+  return sub;
+}
+
 async function fetchBalancesData(): Promise<BalancesData> {
-  // §4: "profile first, balances second — sequence them, do not fire in
-  // parallel on boot." `getCurrentUserId` is its own profile round trip
-  // (rather than threading a userId through every caller) — an accepted
-  // extra request, same trade-off as `getUser`'s access-derived `verified`.
-  const userId = await getCurrentUserId();
+  const userId = await currentUserId();
   // Envelope unconfirmed for this service — the profile one turned out to be unwrapped.
-  const res = await apiFetch<{ result?: BalancesData } & Partial<BalancesData>>(`/users/balances/${userId}`, {}, false, 'balance');
-  return (res.result ?? res) as BalancesData;
+  const res = await apiFetch<({ result?: BalancesData } & Partial<BalancesData>) | null>(`/users/balances/${userId}`, {}, false, 'balance');
+  const data = res?.result ?? res;
+  const accounts = data?.balances;
+  const valid = accounts !== null && typeof accounts === 'object'
+    && Object.values(accounts).every((account) => Array.isArray(account?.list));
+  if (!valid) {
+    const firstAccount = accounts && typeof accounts === 'object' ? Object.values(accounts)[0] : undefined;
+    console.error('[balances] unexpected response shape', {
+      body: describeShape(res),
+      data: describeShape(data),
+      firstAccount: describeShape(firstAccount),
+    });
+    throw new Error('Unexpected balances response shape');
+  }
+  return data as BalancesData;
 }
 
 /**

@@ -73,6 +73,7 @@ export const ru = {
     segmentFiat: 'Фиат',
     hiddenZeroBalance: 'Активы с нулевым балансом скрыты',
     noPositiveBalance: 'Нет активов с положительным балансом',
+    balancesError: 'Не удалось загрузить балансы',
     withdrawAction: 'Вывести',
   },
   deals: {

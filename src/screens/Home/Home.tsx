@@ -33,6 +33,7 @@ export function Home() {
   const [deals, setDeals] = useState<Deal[]>();
   const [assets, setAssets] = useState<Asset[]>();
   const [assetsLoading, setAssetsLoading] = useState(true);
+  const [assetsFailed, setAssetsFailed] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
 
   const fail = useCallback((err: unknown) => {
@@ -47,13 +48,19 @@ export function Home() {
     void getDeals().then(setDeals).catch(fail);
   }, [clientType, fail]);
 
+  // Failure shown inside the deposit panel, not the hero banner — that one is for the widgets above.
   const loadAssets = useCallback(() => {
     setAssetsLoading(true);
+    setAssetsFailed(false);
     void getAssets(selectedGroup).then((data) => {
       setAssets(data);
       setAssetsLoading(false);
-    }).catch(fail);
-  }, [selectedGroup, fail]);
+    }).catch((err: unknown) => {
+      console.error('[Home] balances load failed', err);
+      setAssetsLoading(false);
+      setAssetsFailed(true);
+    });
+  }, [selectedGroup]);
 
   useEffect(() => {
     load();
@@ -66,7 +73,6 @@ export function Home() {
   function retry() {
     setLoadFailed(false);
     load();
-    loadAssets();
   }
 
   const positiveAssets = (assets ?? []).filter((a) => Number(a.balance) > 0);
@@ -87,7 +93,8 @@ export function Home() {
               <Button variant="secondary" size="compact" onClick={retry}>{ru.common.retryAction}</Button>
             </div>
           )}
-          {user ? <CompanyChip>{user.clientName}</CompanyChip> : <Skeleton width={140} height={22} radius={8}/>}
+          {!user && !loadFailed && <Skeleton width={140} height={22} radius={8}/>}
+          {user?.clientName && <CompanyChip>{user.clientName}</CompanyChip>}
           <div className="home__stats">
             {stats ? (
               <>
@@ -137,10 +144,16 @@ export function Home() {
               <Skeleton height={60} radius={12}/>
             </div>
           )}
-          {!assetsLoading && positiveAssets.length === 0 && (
+          {assetsFailed && (
+            <div className="home__load-error home__load-error--assets">
+              <p className="home__load-error-text">{ru.home.balancesError}</p>
+              <Button variant="secondary" size="compact" onClick={loadAssets}>{ru.common.retryAction}</Button>
+            </div>
+          )}
+          {!assetsLoading && !assetsFailed && positiveAssets.length === 0 && (
             <p className="home__empty">{ru.home.noPositiveBalance}</p>
           )}
-          {!assetsLoading && positiveAssets.map((asset) => (
+          {!assetsLoading && !assetsFailed && positiveAssets.map((asset) => (
             <TableRow
               key={asset.ticker}
               ticker={asset.ticker}
@@ -151,7 +164,7 @@ export function Home() {
             />
           ))}
         </div>
-        {hiddenZeroBalance && <p className="home__hidden-caption">{ru.home.hiddenZeroBalance}</p>}
+        {hiddenZeroBalance && !assetsFailed && <p className="home__hidden-caption">{ru.home.hiddenZeroBalance}</p>}
       </Panel>
     </div>
   );

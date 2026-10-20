@@ -59,6 +59,10 @@
   margin: 0;
 }
 
+.home__load-error--assets {
+  padding: 12px 16px;
+}
+
 .home__load-error .button {
   width: auto;
   flex-shrink: 0;

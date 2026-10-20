@@ -32,6 +32,9 @@ async function fetchProfile(): Promise<RawProfile> {
     console.error('[profile] unexpected /secured/user/profile response shape', describeShape(body));
     throw new Error('Unexpected profile response shape');
   }
+  if (!profile.name) {
+    console.warn('[profile] no `name` in /secured/user/profile — fields:', describeShape(body));
+  }
   return profile as RawProfile;
 }
 
@@ -82,16 +85,4 @@ export async function getUser(_clientType: ClientType): Promise<User> {
 /** Seen on dev: `userPublicId` arrives display-formatted, e.g. "2F88 2AD2 53C7 4704 A28F 4374 AE78 23FC". */
 function compactPublicId(userPublicId: string): string {
   return userPublicId.replace(/\s+/g, '');
-}
-
-/**
- * `userPublicId` as a canonical UUID — §4: "profile first, balances second — sequence them, do
- * not fire in parallel." The balances path rejected the spaced display form with a 400; with the
- * spaces gone it is 32 hex digits, i.e. a UUID, so it's sent in the standard dashed form.
- */
-export async function getCurrentUserId(): Promise<string> {
-  const id = compactPublicId((await fetchProfile()).userPublicId);
-  return /^[0-9a-f]{32}$/i.test(id)
-    ? `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`.toLowerCase()
-    : id;
 }
