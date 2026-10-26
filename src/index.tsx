@@ -12,7 +12,6 @@ import { ensureTelegramEnvironment } from '@/telegram/environment.ts';
 import { USE_REAL_API, exchangeSocialCode, getUser } from '@/api/index.ts';
 import { authenticateMiniApp } from '@/api/real/miniAppAuth.ts';
 import { getFreshInitData } from '@/telegram/initData.ts';
-import { getLastClientType } from '@/lib/lastClientType.ts';
 import {
   getAccessToken,
   hydrateTokensFromStorage,
@@ -113,12 +112,9 @@ void (async () => {
 
       if (getAccessToken()) {
         try {
-          // The mini-app access token carries no account-type field to read
-          // back (`lib/lastClientType.ts`'s own comment) — this is purely a
-          // display label, session-derived data everywhere else.
-          const clientType = getLastClientType();
-          const profile = await getUser(clientType);
-          useSessionStore.getState().setSession({ email: profile.email, clientType });
+          // Real getUser reads the account type from the token's `accountType` claim.
+          const profile = await getUser('FL');
+          useSessionStore.getState().setSession({ email: profile.email, clientType: profile.clientType });
         } catch {
           // Got a token but the profile fetch failed — leave session unset
           // rather than show a half-populated app; the next real API call

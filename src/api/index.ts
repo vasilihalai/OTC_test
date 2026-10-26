@@ -26,7 +26,6 @@ import { authenticateMiniApp } from '@/api/real/miniAppAuth.ts';
 import { ApiError } from '@/api/http.ts';
 import { saveAccessToken } from '@/api/real/http/tokenStore.ts';
 import { getFreshInitData } from '@/telegram/initData.ts';
-import { setLastClientType } from '@/lib/lastClientType.ts';
 import type { Session } from '@/api/types.ts';
 
 export const USE_REAL_API = import.meta.env.VITE_USE_REAL_API === 'true';
@@ -84,7 +83,6 @@ export async function signInConfirmOtp(params: { transactionId: string; otp: str
     throw new ApiError(err.httpStatus, 'TELEGRAM_BIND_FAILED', err.message, err.requestId, err.raw);
   }
   saveAccessToken(result);
-  setLastClientType(params.clientType);
   return { email: params.email, clientType: params.clientType };
 }
 

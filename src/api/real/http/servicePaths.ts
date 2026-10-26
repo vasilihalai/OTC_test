@@ -9,7 +9,8 @@ export type Service = 'auth' | 'userAccount' | 'balance' | 'financial';
 const PREFIX: Record<Service, string> = {
   auth: '/auth/api/v1',
   userAccount: '/users/api/v1',
-  balance: '/balance/api/v1',
+  // Version lives in the call path — balances use v2 (backend-confirmed), like the financial service.
+  balance: '/balance/api',
   financial: '/operations/api',
 };
 
