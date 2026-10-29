@@ -1,0 +1,26 @@
+.load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  animation: load-error-in 0.2s ease-out;
+}
+
+.load-error__text {
+  flex: 1;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.load-error .button {
+  width: auto;
+  flex-shrink: 0;
+  padding-inline: 20px;
+}
+
+@keyframes load-error-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

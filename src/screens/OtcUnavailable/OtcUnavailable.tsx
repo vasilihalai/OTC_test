@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { BlockingState } from '@/components/BlockingState/BlockingState.tsx';
 import { Button } from '@/components/Button/Button.tsx';
+import { Spinner } from '@/components/Spinner/Spinner.tsx';
+import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import { getUser } from '@/api/index.ts';
 import type { OtcAccessReason, User } from '@/api/index.ts';
 import { useSessionStore } from '@/store/session.ts';
@@ -17,17 +19,23 @@ export function OtcUnavailable() {
   // changed to this screen. Still fetches the user for the action's URLs.
   const locationReason = (useLocation().state as { otcAccess?: OtcAccessReason } | null)?.otcAccess;
   const [user, setUser] = useState<User>();
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (session) {
+      setFailed(false);
       void getUser(session.clientType).then(setUser).catch((err: unknown) => {
         console.error('[OtcUnavailable] user load failed', err);
+        setFailed(true);
       });
     }
-  }, [session]);
+  }, [session, attempt]);
 
   if (!user) {
-    return null;
+    return failed
+      ? <div className="page-error"><LoadError message={ru.common.errorGeneric} onRetry={() => setAttempt((n) => n + 1)}/></div>
+      : <div className="page-loader"><Spinner size={28}/></div>;
   }
 
   const reason = locationReason ?? user.otcAccess;

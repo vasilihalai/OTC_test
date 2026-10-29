@@ -5,10 +5,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/>
     <meta name="theme-color" content="#000000"/>
     <title>Telegram Mini App</title>
+    <!-- Boot splash: visible from the first paint until React's first render replaces #root's
+         content — covers the JS download and the silent Telegram sign-in, which can take seconds. -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #0C0E12; }
+      .boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        color: #fff;
+        font: 600 18px/1 -apple-system, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+        animation: boot-splash-in 0.3s ease-out;
+      }
+      .boot-splash__brand { display: inline-flex; align-items: center; gap: 8px; }
+      .boot-splash__mark { width: 10px; height: 10px; border-radius: 50%; background: #C51625; }
+      .boot-splash__spinner {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 2px solid #94979C;
+        border-top-color: transparent;
+        animation: boot-splash-spin 0.7s linear infinite;
+      }
+      @keyframes boot-splash-spin { to { transform: rotate(360deg); } }
+      @keyframes boot-splash-in { from { opacity: 0; } to { opacity: 1; } }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-splash" role="status" aria-label="Загрузка">
+        <span class="boot-splash__brand"><span class="boot-splash__mark"></span>XRuby</span>
+        <span class="boot-splash__spinner"></span>
+      </div>
+    </div>
     <script src="/src/index.tsx" type="module"></script>
   </body>
 </html>

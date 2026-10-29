@@ -5,12 +5,12 @@ import { Select } from '@/components/Select/Select.tsx';
 import { AmountField } from '@/components/AmountField/AmountField.tsx';
 import { Button } from '@/components/Button/Button.tsx';
 import { CurrencyIcon } from '@/components/CurrencyIcon/CurrencyIcon.tsx';
-import { getAccounts, getAssets, transfer } from '@/api/index.ts';
+import { ApiError, getAccounts, getAssets, mapApiError, transfer } from '@/api/index.ts';
 import type { Accounts, Asset, TransferAccount } from '@/api/index.ts';
 import { useTransferModalStore } from '@/store/transferModal.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { useToastStore } from '@/store/toast.ts';
-import { notifySuccess } from '@/telegram/adapter.ts';
+import { notifyError, notifySuccess } from '@/telegram/adapter.ts';
 import { formatAmount } from '@/lib/money.ts';
 import { ru } from '@/i18n/ru.ts';
 
@@ -53,11 +53,15 @@ export function TransferModal() {
       return;
     }
     setAmount('');
+    setAccounts(undefined);
     void Promise.all([getAccounts(), getAssets('fiat'), getAssets('crypto')]).then(([accountsData, fiat, crypto]) => {
       setAccounts(accountsData);
       setAssets([...fiat, ...crypto]);
+    }).catch((err: unknown) => {
+      console.error('[TransferModal] balances load failed', err);
+      showToast(ru.home.balancesError);
     });
-  }, [isOpen]);
+  }, [isOpen, showToast]);
 
   // Centers the swap ring on the seam between the two *select boxes*
   // themselves, not the midpoint of the whole label+box+label+box stack —
@@ -100,7 +104,8 @@ export function TransferModal() {
   }
 
   const available = accounts ? (accounts[from][ticker] ?? '0') : '0';
-  const availableLabel = `${formatAmount(available, ticker)} ${ticker}`;
+  // Not "0" while loading — that reads as an empty account.
+  const availableLabel = accounts ? `${formatAmount(available, ticker)} ${ticker}` : ru.common.loading;
   const amountNum = Number(amount || '0');
   const canConfirm = amountNum > 0 && amountNum <= Number(available);
   const amountError = amount && amountNum > Number(available) ? ru.withdraw.errorInsufficientFunds : undefined;
@@ -133,6 +138,9 @@ export function TransferModal() {
       bumpBalancesVersion();
       showToast(ru.transferModal.successToast);
       close();
+    } catch (err) {
+      notifyError();
+      showToast(err instanceof ApiError ? mapApiError(err) : ru.common.errorGeneric);
     } finally {
       setSubmitting(false);
     }

@@ -17,6 +17,7 @@ import {
   MOCK_REQUISITES_FIAT,
   MOCK_SAVED_REQUISITES,
   MOCK_STATS,
+  MOCK_USD_RATES,
   MOCK_USERS,
   MOCK_WITHDRAW_CRYPTO_NETWORKS,
   MOCK_WITHDRAW_FIAT_METHODS,
@@ -63,7 +64,10 @@ export async function getAssets(group: AssetGroup): Promise<Asset[]> {
   await mockDelay();
   return MOCK_ASSETS
     .filter((asset) => asset.group === group)
-    .map((asset) => ({ ...asset, balance: String(getAccountBalance('deposit', asset.ticker)) }));
+    .map((asset) => {
+      const balance = getAccountBalance('deposit', asset.ticker);
+      return { ...asset, balance: String(balance), usdValue: balance * (MOCK_USD_RATES[asset.ticker] ?? 0) };
+    });
 }
 
 export async function getAccounts(): Promise<Accounts> {

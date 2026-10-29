@@ -9,15 +9,21 @@ import { SegmentedControl } from '@/components/SegmentedControl/SegmentedControl
 import { TableRow } from '@/components/TableRow/TableRow.tsx';
 import { EmptyState } from '@/components/EmptyState/EmptyState.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
-import { Button } from '@/components/Button/Button.tsx';
+import { Checkbox } from '@/components/Checkbox/Checkbox.tsx';
+import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import { getAssets, getDeals, getStats, getUser } from '@/api/index.ts';
-import type { Asset, Deal, Stats, User } from '@/api/index.ts';
+import type { Asset, AssetGroup, Deal, Stats, User } from '@/api/index.ts';
 import { useRequireOtcAccess, useRequireSession } from '@/store/session.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { formatAmount } from '@/lib/money.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './Home.css';
+
+const SMALL_BALANCE_USD = 1;
+
+// Largest USD equivalent first; a row without one (backend didn't price it) goes last.
+const byUsdValueDesc = (a: Asset, b: Asset) => (b.usdValue ?? -1) - (a.usdValue ?? -1);
 
 export function Home() {
   const navigate = useNavigate();
@@ -27,12 +33,13 @@ export function Home() {
   const selectedGroup = useUiStore((s) => s.selectedAssetGroup);
   const setSelectedGroup = useUiStore((s) => s.setSelectedAssetGroup);
   const balancesVersion = useUiStore((s) => s.balancesVersion);
+  const hideSmall = useUiStore((s) => s.hideSmallBalances);
+  const setHideSmall = useUiStore((s) => s.setHideSmallBalances);
 
   const [user, setUser] = useState<User>();
   const [stats, setStats] = useState<Stats>();
   const [deals, setDeals] = useState<Deal[]>();
-  const [assets, setAssets] = useState<Asset[]>();
-  const [assetsLoading, setAssetsLoading] = useState(true);
+  const [assetsByGroup, setAssetsByGroup] = useState<Record<AssetGroup, Asset[]>>();
   const [assetsFailed, setAssetsFailed] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -48,19 +55,17 @@ export function Home() {
     void getDeals().then(setDeals).catch(fail);
   }, [clientType, fail]);
 
-  // Failure shown inside the deposit panel, not the hero banner — that one is for the widgets above.
+  // Both groups at once (one balances request in real mode), so switching the crypto/fiat tab is
+  // instant. After a transfer the old list stays up until the fresh one lands.
   const loadAssets = useCallback(() => {
-    setAssetsLoading(true);
     setAssetsFailed(false);
-    void getAssets(selectedGroup).then((data) => {
-      setAssets(data);
-      setAssetsLoading(false);
-    }).catch((err: unknown) => {
-      console.error('[Home] balances load failed', err);
-      setAssetsLoading(false);
-      setAssetsFailed(true);
-    });
-  }, [selectedGroup]);
+    void Promise.all([getAssets('crypto'), getAssets('fiat')])
+      .then(([crypto, fiat]) => setAssetsByGroup({ crypto, fiat }))
+      .catch((err: unknown) => {
+        console.error('[Home] balances load failed', err);
+        setAssetsFailed(true);
+      });
+  }, []);
 
   useEffect(() => {
     load();
@@ -75,8 +80,15 @@ export function Home() {
     load();
   }
 
-  const positiveAssets = (assets ?? []).filter((a) => Number(a.balance) > 0);
-  const hiddenZeroBalance = (assets ?? []).length > positiveAssets.length;
+  const assetsLoading = !assetsByGroup && !assetsFailed;
+  const assets = assetsByGroup?.[selectedGroup] ?? [];
+  const positiveAssets = assets.filter((a) => Number(a.balance) > 0).sort(byUsdValueDesc);
+  // An unpriced row is never hidden as dust — it may well not be.
+  const visibleAssets = hideSmall
+    ? positiveAssets.filter((a) => a.usdValue === undefined || a.usdValue >= SMALL_BALANCE_USD)
+    : positiveAssets;
+  const hiddenZeroBalance = assets.length > positiveAssets.length;
+  const showList = !assetsLoading && !assetsFailed;
 
   return (
     <div className="home">
@@ -87,12 +99,7 @@ export function Home() {
             <p className="home__hero-subtitle">{ru.home.heroSubtitle}</p>
             <p className="home__desk-hours">{ru.home.deskHours}</p>
           </div>
-          {loadFailed && (
-            <div className="home__load-error">
-              <p className="home__load-error-text">{ru.common.errorGeneric}</p>
-              <Button variant="secondary" size="compact" onClick={retry}>{ru.common.retryAction}</Button>
-            </div>
-          )}
+          {loadFailed && <LoadError message={ru.common.errorGeneric} onRetry={retry}/>}
           {!user && !loadFailed && <Skeleton width={140} height={22} radius={8}/>}
           {user?.clientName && <CompanyChip>{user.clientName}</CompanyChip>}
           <div className="home__stats">
@@ -137,6 +144,9 @@ export function Home() {
             onChange={setSelectedGroup}
           />
         </div>
+        <div className="home__balance-filter">
+          <Checkbox checked={hideSmall} onChange={setHideSmall} label={ru.home.hideSmallBalances}/>
+        </div>
         <div className="home__assets">
           {assetsLoading && (
             <div className="home__deals-skeleton">
@@ -145,26 +155,28 @@ export function Home() {
             </div>
           )}
           {assetsFailed && (
-            <div className="home__load-error home__load-error--assets">
-              <p className="home__load-error-text">{ru.home.balancesError}</p>
-              <Button variant="secondary" size="compact" onClick={loadAssets}>{ru.common.retryAction}</Button>
+            <div className="home__assets-error">
+              <LoadError message={ru.home.balancesError} onRetry={loadAssets}/>
             </div>
           )}
-          {!assetsLoading && !assetsFailed && positiveAssets.length === 0 && (
+          {showList && positiveAssets.length === 0 && (
             <p className="home__empty">{ru.home.noPositiveBalance}</p>
           )}
-          {!assetsLoading && !assetsFailed && positiveAssets.map((asset) => (
+          {showList && positiveAssets.length > 0 && visibleAssets.length === 0 && (
+            <p className="home__empty">{ru.home.allSmallHidden}</p>
+          )}
+          {showList && visibleAssets.map((asset) => (
             <TableRow
               key={asset.ticker}
               ticker={asset.ticker}
               name={asset.name}
-              amount={formatAmount(asset.balance, asset.ticker)}
+              amount={`${formatAmount(asset.balance, asset.ticker)} ${asset.ticker}`}
               actionLabel={`${ru.home.withdrawAction} ${asset.ticker}`}
               onAction={() => navigate(`/withdraw/${asset.group}?asset=${asset.ticker}`)}
             />
           ))}
         </div>
-        {hiddenZeroBalance && !assetsFailed && <p className="home__hidden-caption">{ru.home.hiddenZeroBalance}</p>}
+        {hiddenZeroBalance && showList && <p className="home__hidden-caption">{ru.home.hiddenZeroBalance}</p>}
       </Panel>
     </div>
   );

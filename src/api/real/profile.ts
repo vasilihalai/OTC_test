@@ -2,6 +2,7 @@ import type { ClientType, SecurityLevel, User } from '@/api/types.ts';
 import { apiFetch } from '@/api/http.ts';
 import { getOtcAccess } from '@/api/real/otc.ts';
 import { ensureFreshAccessToken } from '@/api/real/http/tokenStore.ts';
+import { cacheByToken } from '@/api/real/http/cache.ts';
 import { toOtcAccessReason } from '@/lib/otcAccess.ts';
 import { describeShape } from '@/api/real/http/responseShape.ts';
 
@@ -95,10 +96,17 @@ async function fetchDisplayName(): Promise<string> {
   return shortProfile.name ?? '';
 }
 
+// Boot, Home and the OTC-access gate all ask for the user on one navigation — three requests each.
+const userCache = cacheByToken(() => loadUser(), 30_000);
+
+/** `clientType` is kept only to mirror the mock's signature; the real one comes from the token. */
+export function getUser(_clientType: ClientType): Promise<User> {
+  return userCache.get();
+}
+
 // §3: "There is no `verified: boolean` in the contract" — derived from `/v1/otc/access`'s
-// `enabled` flag instead (question B6). `clientType` is kept only to mirror the mock's signature;
-// the real one comes from the token.
-export async function getUser(_clientType: ClientType): Promise<User> {
+// `enabled` flag instead (question B6).
+async function loadUser(): Promise<User> {
   const accountType = await tokenAccountType();
   const [details, name, access] = await Promise.all([
     accountType === 'BUSINESS' ? fetchBusinessDetails() : fetchIndividualDetails(),

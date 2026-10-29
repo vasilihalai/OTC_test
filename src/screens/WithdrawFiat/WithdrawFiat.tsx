@@ -8,6 +8,7 @@ import { CurrencyIcon } from '@/components/CurrencyIcon/CurrencyIcon.tsx';
 import { Button } from '@/components/Button/Button.tsx';
 import { Panel } from '@/components/Panel/Panel.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
+import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import { getAssets, getWithdrawFiatOptions } from '@/api/index.ts';
 import type { Asset, FiatWithdrawOptions } from '@/api/index.ts';
 import type { WithdrawFiatRouteState } from '@/screens/WithdrawRequisites/WithdrawRequisites.tsx';
@@ -49,24 +50,38 @@ export function WithdrawFiat() {
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState<string>();
   const [initialLoading, setInitialLoading] = useState(true);
+  const [assetsFailed, setAssetsFailed] = useState(false);
+  const [assetsAttempt, setAssetsAttempt] = useState(0);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [optionsFailed, setOptionsFailed] = useState(false);
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
 
   useEffect(() => {
+    setAssetsFailed(false);
     void getAssets('fiat').then((data) => {
       setAssets(data);
       setCurrency((current) => (current && data.some((a) => a.ticker === current) ? current : (data[0]?.ticker ?? '')));
-      setInitialLoading(false);
-    });
-  }, [balancesVersion]);
+    }).catch((err: unknown) => {
+      console.error('[WithdrawFiat] assets load failed', err);
+      setAssetsFailed(true);
+    }).finally(() => setInitialLoading(false));
+  }, [balancesVersion, assetsAttempt]);
 
   useEffect(() => {
     if (!currency) {
       return;
     }
+    setOptionsLoading(true);
+    setOptionsFailed(false);
     void getWithdrawFiatOptions(currency).then((data) => {
       setOptions(data);
       setPaymentType((current) => (data.methods.some((m) => m.paymentType === current) ? current : (data.methods[0]?.paymentType ?? '')));
-    });
-  }, [currency]);
+    }).catch((err: unknown) => {
+      console.error('[WithdrawFiat] withdraw options load failed', err);
+      setOptions(undefined);
+      setOptionsFailed(true);
+    }).finally(() => setOptionsLoading(false));
+  }, [currency, optionsAttempt]);
 
   const asset = assets.find((a) => a.ticker === currency);
   const available = asset?.balance ?? '0';
@@ -129,6 +144,20 @@ export function WithdrawFiat() {
     );
   }
 
+  if (assetsFailed) {
+    return (
+      <div className="withdraw-fiat">
+        <LoadError
+          message={ru.withdraw.assetsError}
+          onRetry={() => {
+            setInitialLoading(true);
+            setAssetsAttempt((n) => n + 1);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="withdraw-fiat">
       <div className="withdraw-fiat__scroll">
@@ -145,7 +174,12 @@ export function WithdrawFiat() {
           value={currency}
           onChange={setCurrency}
         />
-        {options && (
+        {optionsLoading && <Skeleton height={56} radius={12}/>}
+        {optionsFailed && <LoadError message={ru.withdraw.methodsError} onRetry={() => setOptionsAttempt((n) => n + 1)}/>}
+        {!optionsLoading && options?.methods.length === 0 && (
+          <p className="withdraw-fiat__note">{ru.withdraw.noMethods}</p>
+        )}
+        {!optionsLoading && options && options.methods.length > 0 && (
           <Select
             label={ru.withdraw.methodLabel}
             layout="method"
@@ -159,7 +193,7 @@ export function WithdrawFiat() {
         <AmountField
           label={ru.withdraw.sendLabel}
           availableLabel={ru.withdraw.balanceLabel}
-          available={formatAmount(available, currency)}
+          available={`${formatAmount(available, currency)} ${currency}`}
           value={amount}
           onChange={handleAmountChange}
           onMax={handleMax}
@@ -183,7 +217,7 @@ export function WithdrawFiat() {
       </div>
 
       <div className="withdraw-fiat__submit">
-        <Button variant="accent" onClick={handleContinue}>{ru.withdraw.confirmAction}</Button>
+        <Button variant="accent" disabled={!method || !(Number(amount) > 0)} onClick={handleContinue}>{ru.withdraw.confirmAction}</Button>
       </div>
     </div>
   );

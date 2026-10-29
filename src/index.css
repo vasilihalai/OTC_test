@@ -86,6 +86,22 @@ body:not(.in-telegram) .app-shell {
   overscroll-behavior: contain;
 }
 
+/* Inside Telegram there's no pill of ours (AppHeader.tsx leaves
+   --header-clearance unset). Outside fullscreen Telegram's header is above
+   the webview, so content starts near the top; in fullscreen its floating
+   Close/menu controls overlay the content and need clearing. Telegram's CSS
+   vars are read live, so late-reported insets still land. */
+body.in-telegram .app-content {
+  padding-top: var(--header-clearance, 8px);
+}
+
+body.in-telegram.is-fullscreen .app-content {
+  padding-top: var(
+    --header-clearance,
+    calc(48px + max(var(--tg-viewport-safe-area-inset-top, 0px), var(--tg-viewport-content-safe-area-inset-top, 0px)))
+  );
+}
+
 /* Keeps the last item of a scrolling tab screen from ending up underneath
    the floating tab bar, whose own height varies with the device safe area. */
 .app-content--with-tab-bar {
@@ -103,6 +119,18 @@ body:not(.in-telegram) .app-shell {
      above it. */
   flex-shrink: 0;
   animation: page-in 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+.page-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  color: var(--text-muted);
+}
+
+.page-error {
+  padding: 24px 16px;
 }
 
 @keyframes page-in {

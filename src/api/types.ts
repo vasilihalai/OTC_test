@@ -117,6 +117,8 @@ export interface Asset {
   name: string;
   balance: string;
   group: AssetGroup;
+  /** USD equivalent of the holding, for ordering and the "under $1" filter; undefined when unknown. */
+  usdValue?: number;
 }
 
 export type SocialProvider = 'google' | 'apple';

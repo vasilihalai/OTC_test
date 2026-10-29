@@ -68,12 +68,18 @@ export function WithdrawRequisites() {
   }, [routeState, navigate]);
 
   useEffect(() => {
-    void getSavedRequisites().then(setSaved);
+    // Saved requisites are a convenience; without them the form is still fully usable.
+    void getSavedRequisites().then(setSaved).catch((err: unknown) => {
+      console.error('[WithdrawRequisites] saved requisites load failed', err);
+    });
   }, []);
 
   useEffect(() => {
     if (routeState) {
-      void getWithdrawFiatOptions(routeState.ticker).then(setOptions);
+      // Same cached directory the previous screen just loaded successfully.
+      void getWithdrawFiatOptions(routeState.ticker).then(setOptions).catch((err: unknown) => {
+        console.error('[WithdrawRequisites] withdraw options load failed', err);
+      });
     }
   }, [routeState]);
 

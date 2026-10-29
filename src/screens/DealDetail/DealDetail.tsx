@@ -12,6 +12,7 @@ import { DocumentRow } from '@/components/DocumentRow/DocumentRow.tsx';
 import { Button } from '@/components/Button/Button.tsx';
 import { ConfirmDialog } from '@/components/ConfirmDialog/ConfirmDialog.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
+import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import {
   USE_REAL_API,
   acceptQuote,
@@ -68,6 +69,8 @@ export function DealDetail() {
   const [deal, setDeal] = useState<Deal>();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!id) {
@@ -75,23 +78,35 @@ export function DealDetail() {
     }
     setLoading(true);
     setNotFound(false);
+    setFailed(false);
     void getDealById(id).then((data) => {
       if (data) {
         setDeal(data);
       } else {
         setNotFound(true);
       }
-      setLoading(false);
-    });
-  }, [id]);
+    }).catch((err: unknown) => {
+      console.error('[DealDetail] deal load failed', err);
+      setFailed(true);
+    }).finally(() => setLoading(false));
+  }, [id, attempt]);
 
   // §7.7 — real mode only, and only while the deal is still in a
   // non-terminal status; nothing about a DONE/DECLINED deal changes again.
+  // A failed poll is simply retried by the next one.
   usePolling(() => {
     if (id) {
-      void getDealById(id).then((data) => data && setDeal(data));
+      void getDealById(id).then((data) => data && setDeal(data)).catch(() => undefined);
     }
   }, 10_000, USE_REAL_API && !!deal && !isTerminalDealStatus(deal.status));
+
+  if (failed && !deal) {
+    return (
+      <div className="deal-detail">
+        <LoadError message={ru.dealDetail.loadError} onRetry={() => setAttempt((n) => n + 1)}/>
+      </div>
+    );
+  }
 
   if (notFound) {
     return (
@@ -218,7 +233,7 @@ function QuoteCard({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal) => v
       // include one — the server just eventually reflects EXPIRED on its
       // own) — an immediate one-off refetch here is snappier than waiting
       // out the rest of the 10s poll interval below for the same update.
-      void getDealById(deal.id).then((updated) => updated && onUpdate(updated));
+      void getDealById(deal.id).then((updated) => updated && onUpdate(updated)).catch(() => undefined);
     } else {
       const updated = expireQuote(deal.id);
       if (updated) {
@@ -296,12 +311,16 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
   const scenario = isBalanceScenario(urlScenario) ? urlScenario : storeScenario;
   const [requisites, setRequisites] = useState<Requisites>();
   const [balance, setBalance] = useState<number>();
+  const [balanceFailed, setBalanceFailed] = useState(false);
+  const [balanceAttempt, setBalanceAttempt] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
 
   useEffect(() => {
-    void getRequisites(deal.id).then(setRequisites);
+    void getRequisites(deal.id).then(setRequisites).catch((err: unknown) => {
+      console.error('[DealDetail] requisites load failed', err);
+    });
   }, [deal.id]);
 
   const dealAmount = parseAmountValue(deal.from);
@@ -320,13 +339,21 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
   }, [scenario, deal.ticker, dealAmount]);
 
   useEffect(() => {
-    void getAccounts().then((accounts) => setBalance(Number(accounts.deposit[deal.ticker] ?? '0')));
-  }, [deal.ticker, scenario, balancesVersion]);
+    setBalanceFailed(false);
+    void getAccounts()
+      .then((accounts) => setBalance(Number(accounts.deposit[deal.ticker] ?? '0')))
+      .catch((err: unknown) => {
+        console.error('[DealDetail] balance load failed', err);
+        setBalanceFailed(true);
+      });
+  }, [deal.ticker, scenario, balancesVersion, balanceAttempt]);
 
   const minDeal = getMinDealAmount(deal.ticker);
 
   if (balance === undefined) {
-    return <Skeleton height={90} radius={14}/>;
+    return balanceFailed
+      ? <LoadError message={ru.home.balancesError} onRetry={() => setBalanceAttempt((n) => n + 1)}/>
+      : <Skeleton height={90} radius={14}/>;
   }
 
   // §7.3.2's exact order: sufficient, then the ≤1% case, then below-minimum,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
@@ -10,6 +10,7 @@ import { CurrencyIcon } from '@/components/CurrencyIcon/CurrencyIcon.tsx';
 import { WarningPanel } from '@/components/WarningPanel/WarningPanel.tsx';
 import { Button } from '@/components/Button/Button.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
+import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import { TwoFactorGate } from '@/components/TwoFactorGate/TwoFactorGate.tsx';
 import { QrScannerModal } from '@/components/QrScannerModal/QrScannerModal.tsx';
 import {
@@ -26,6 +27,7 @@ import { useRequireSession } from '@/store/session.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { useTransferModalStore } from '@/store/transferModal.ts';
 import { formatAmount } from '@/lib/money.ts';
+import { extractAddressFromQr, isValidCryptoAddress } from '@/lib/cryptoAddress.ts';
 import { RateLimitedError } from '@/lib/rateLimitedError.ts';
 import { notifyError } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
@@ -33,6 +35,8 @@ import { ru } from '@/i18n/ru.ts';
 import './WithdrawCrypto.css';
 
 const QUOTE_DEBOUNCE_MS = 500;
+// A typed address is judged once the user pauses, not on every keystroke.
+const ADDRESS_CHECK_DELAY_MS = 700;
 
 function QrIcon() {
   return (
@@ -43,18 +47,6 @@ function QrIcon() {
       <path d="M12 12h2.5v2.5H12zM16 12h1.5v1.5M16 16h1.5v1.5M12 16h1.5v1.5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
     </svg>
   );
-}
-
-/** §5.1: "addressRegex drives client-side address validation ... treat a malformed regex as 'no client validation' rather than crashing the screen." */
-function compileAddressRegex(pattern: string | null | undefined): RegExp | undefined {
-  if (!pattern) {
-    return undefined;
-  }
-  try {
-    return new RegExp(pattern);
-  } catch {
-    return undefined;
-  }
 }
 
 /** §5.2: "Show the smallest availableLimit across the returned periods ... render its currency." Not guaranteed which periods exist. */
@@ -76,8 +68,13 @@ export function WithdrawCrypto() {
   const balancesVersion = useUiStore((s) => s.balancesVersion);
 
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [assetsFailed, setAssetsFailed] = useState(false);
+  const [assetsAttempt, setAssetsAttempt] = useState(0);
   const [ticker, setTicker] = useState(preselected ?? '');
   const [options, setOptions] = useState<CryptoWithdrawOptions>();
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [optionsFailed, setOptionsFailed] = useState(false);
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
   const [networkId, setNetworkId] = useState('');
   const [manualAddress, setManualAddress] = useState('');
   const [addressError, setAddressError] = useState<string>();
@@ -95,35 +92,61 @@ export function WithdrawCrypto() {
   const address = manualAddress.trim();
 
   useEffect(() => {
+    setAssetsFailed(false);
     void getAssets('crypto').then((data) => {
       setAssets(data);
       setTicker((current) => (current && data.some((a) => a.ticker === current) ? current : (data[0]?.ticker ?? '')));
-      setInitialLoading(false);
-    });
-  }, [balancesVersion]);
+    }).catch((err: unknown) => {
+      console.error('[WithdrawCrypto] assets load failed', err);
+      setAssetsFailed(true);
+    }).finally(() => setInitialLoading(false));
+  }, [balancesVersion, assetsAttempt]);
 
   useEffect(() => {
     if (!ticker) {
       return;
     }
+    setOptionsLoading(true);
+    setOptionsFailed(false);
+    // Address/amount are cleared by handleTickerChange on a user's switch — not here, or an address
+    // pasted while the first network list is still loading would be wiped when it lands.
     void getWithdrawCryptoOptions(ticker).then((data) => {
       setOptions(data);
       setNetworkId(data.networks[0]?.currencyNetworkId ?? '');
-      setManualAddress('');
-      setAmount('');
       setQuote(undefined);
-    });
-  }, [ticker]);
+    }).catch((err: unknown) => {
+      // Used to fail silently: no network selected, so no quote and a permanently disabled button.
+      console.error('[WithdrawCrypto] withdraw options load failed', err);
+      setOptions(undefined);
+      setNetworkId('');
+      setOptionsFailed(true);
+    }).finally(() => setOptionsLoading(false));
+  }, [ticker, optionsAttempt]);
 
   const asset = assets.find((a) => a.ticker === ticker);
   const available = asset?.balance ?? '0';
   const selectedNetwork = options?.networks.find((n) => n.currencyNetworkId === networkId);
-  const addressRegex = useMemo(() => compileAddressRegex(selectedNetwork?.addressRegex), [selectedNetwork?.addressRegex]);
+  const addressValid = !!selectedNetwork && isValidCryptoAddress(address, selectedNetwork);
+  const invalidAddressMessage = selectedNetwork?.networkLabel
+    ? `${ru.withdraw.errorAddressInvalidForNetwork} ${selectedNetwork.networkLabel}`
+    : ru.withdraw.errorAddressInvalid;
 
-  // §5.2 — a fresh quote whenever what would change its numbers changes.
-  // Debounced so typing an amount doesn't fire a request per keystroke.
   useEffect(() => {
-    if (!ticker || !networkId || !address || !amount || Number(amount) <= 0) {
+    if (!address || !selectedNetwork) {
+      return;
+    }
+    if (addressValid) {
+      setAddressError(undefined);
+      return;
+    }
+    const timer = setTimeout(() => setAddressError(invalidAddressMessage), ADDRESS_CHECK_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [address, selectedNetwork, addressValid, invalidAddressMessage]);
+
+  // §5.2 — a fresh quote whenever what would change its numbers changes. Debounced so typing an
+  // amount doesn't fire a request per keystroke; never for an address that fails validation.
+  useEffect(() => {
+    if (!ticker || !networkId || !addressValid || !amount || Number(amount) <= 0) {
       setQuote(undefined);
       return;
     }
@@ -141,7 +164,7 @@ export function WithdrawCrypto() {
       clearTimeout(timer);
       setQuoteLoading(false);
     };
-  }, [ticker, networkId, address, amount]);
+  }, [ticker, networkId, address, addressValid, amount]);
 
   // §5.2: "expiredAt means the quote goes stale. Re-request withdraw/info if
   // the user sits on the screen past it, and disable submit in the meantime."
@@ -174,8 +197,8 @@ export function WithdrawCrypto() {
   }
 
   function handleAddressBlur() {
-    if (address && addressRegex && !addressRegex.test(address)) {
-      setAddressError(ru.withdraw.errorAddressInvalid);
+    if (address && selectedNetwork && !addressValid) {
+      setAddressError(invalidAddressMessage);
     }
   }
 
@@ -186,12 +209,13 @@ export function WithdrawCrypto() {
   }
 
   function handleQrScan(scanned: string) {
-    setManualAddress(scanned);
-    setAddressError(undefined);
+    const scannedAddress = extractAddressFromQr(scanned);
+    setManualAddress(scannedAddress);
+    setAddressError(selectedNetwork && !isValidCryptoAddress(scannedAddress, selectedNetwork) ? invalidAddressMessage : undefined);
     setQrOpen(false);
   }
 
-  const canConfirm = !!quote && !quoteLoading;
+  const canConfirm = !!quote && !quoteLoading && addressValid;
 
   async function handleConfirm() {
     setAddressError(undefined);
@@ -201,8 +225,8 @@ export function WithdrawCrypto() {
       notifyError();
       return;
     }
-    if (addressRegex && !addressRegex.test(address)) {
-      setAddressError(ru.withdraw.errorAddressInvalid);
+    if (!addressValid) {
+      setAddressError(invalidAddressMessage);
       notifyError();
       return;
     }
@@ -293,6 +317,20 @@ export function WithdrawCrypto() {
     );
   }
 
+  if (assetsFailed) {
+    return (
+      <div className="withdraw-crypto">
+        <LoadError
+          message={ru.withdraw.assetsError}
+          onRetry={() => {
+            setInitialLoading(true);
+            setAssetsAttempt((n) => n + 1);
+          }}
+        />
+      </div>
+    );
+  }
+
   const limit = smallestLimit(quote);
 
   return (
@@ -338,8 +376,13 @@ export function WithdrawCrypto() {
             )}
           />
         </div>
+        {optionsLoading && <Skeleton height={48} radius={12}/>}
+        {optionsFailed && <LoadError message={ru.withdraw.optionsError} onRetry={() => setOptionsAttempt((n) => n + 1)}/>}
+        {!optionsLoading && options?.networks.length === 0 && (
+          <p className="withdraw-crypto__note">{ru.withdraw.noNetworks}</p>
+        )}
         {/* §5.1: hide the selector when there's exactly one network — this now falls out naturally from the real network list length, not a hardcoded BTC check. */}
-        {options && options.networks.length > 1 && (
+        {!optionsLoading && options && options.networks.length > 1 && (
           <Select
             label={ru.withdraw.networkLabel}
             layout="plain"
@@ -353,7 +396,7 @@ export function WithdrawCrypto() {
         <AmountField
           label={ru.withdraw.sendLabel}
           availableLabel={ru.withdraw.balanceLabel}
-          available={formatAmount(available, ticker)}
+          available={`${formatAmount(available, ticker)} ${ticker}`}
           value={amount}
           onChange={handleAmountChange}
           onMax={handleMax}

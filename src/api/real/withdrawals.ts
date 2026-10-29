@@ -11,6 +11,8 @@ import type {
   WithdrawalResult,
 } from '@/api/types.ts';
 import { apiFetch } from '@/api/http.ts';
+import { cacheByToken } from '@/api/real/http/cache.ts';
+import { describeShape } from '@/api/real/http/responseShape.ts';
 import { paymentTypeMeta } from '@/lib/paymentType.ts';
 
 /** Payment requisites to fund a specific deal — id is a deal id, not a withdrawal. */
@@ -52,14 +54,34 @@ interface WithdrawConfiguration {
   cryptoCurrencies: RawCurrencyItem[];
 }
 
-async function getWithdrawConfiguration(): Promise<WithdrawConfiguration> {
-  return apiFetch<WithdrawConfiguration>('/v3/configuration/withdraws', {}, false, 'financial');
+/**
+ * The financial service answers in a `{ result }` envelope; this read the body bare, so both lists
+ * came back undefined and every withdrawal screen failed to load its networks/methods. Both shapes
+ * are accepted. Cached briefly — it's the same directory for every asset the user switches to.
+ */
+const withdrawConfiguration = cacheByToken(async (): Promise<WithdrawConfiguration> => {
+  const res = await apiFetch<({ result?: Partial<WithdrawConfiguration> } & Partial<WithdrawConfiguration>) | null>(
+    '/v3/configuration/withdraws', {}, false, 'financial',
+  );
+  const config = res?.result ?? res;
+  if (!Array.isArray(config?.cryptoCurrencies) && !Array.isArray(config?.fiatCurrencies)) {
+    console.error('[withdraw] unexpected /v3/configuration/withdraws response shape', describeShape(res));
+    throw new Error('Unexpected withdraw configuration shape');
+  }
+  return { cryptoCurrencies: config?.cryptoCurrencies ?? [], fiatCurrencies: config?.fiatCurrencies ?? [] };
+}, 5 * 60_000);
+
+function getWithdrawConfiguration(): Promise<WithdrawConfiguration> {
+  return withdrawConfiguration.get();
 }
 
 export async function getWithdrawCryptoOptions(asset: string): Promise<CryptoWithdrawOptions> {
   const config = await getWithdrawConfiguration();
-  const networks: WithdrawNetworkOption[] = config.cryptoCurrencies
-    .filter((item) => item.currency === asset)
+  const items = config.cryptoCurrencies.filter((item) => item.currency === asset);
+  if (items.some((item) => !item.currencyNetworkId)) {
+    console.warn('[withdraw] crypto network without currencyNetworkId — fields:', describeShape(items[0]));
+  }
+  const networks: WithdrawNetworkOption[] = items
     .map((item) => ({
       currencyNetworkId: item.currencyNetworkId ?? '',
       networkCode: item.networkCode ?? '',

@@ -108,6 +108,8 @@ export async function signOut(): Promise<void> {
 
 export const getUser = USE_REAL_API ? realProfile.getUser : mockData.getUser;
 export const getAssets = USE_REAL_API ? realBalances.getAssets : mockData.getAssets;
+/** Real balances are cached briefly; mock balances are always read live from `accountsStore`. */
+export const invalidateBalances = USE_REAL_API ? realBalances.invalidateBalances : () => undefined;
 
 export const getWithdrawFiatOptions = USE_REAL_API
   ? realWithdrawals.getWithdrawFiatOptions

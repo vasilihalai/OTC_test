@@ -7,7 +7,7 @@ export function isFiatTicker(ticker: string): boolean {
 }
 
 function decimalsFor(ticker: string): number {
-  if (ticker === 'BTC') {
+  if (ticker === 'BTC' || ticker === 'ETH') {
     return 6;
   }
   return isFiatTicker(ticker) ? 0 : 2;

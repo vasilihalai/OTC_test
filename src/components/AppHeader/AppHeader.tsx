@@ -28,23 +28,17 @@ function useHeaderClearance(active: boolean) {
   useEffect(() => {
     const el = ref.current;
     if (!active || !el) {
-      // No pill of our own to measure — Telegram's native back/close chrome
-      // is what needs clearing instead, so fall back to its reported safe
-      // area. This effect only runs once per mount (it's keyed on `active`,
-      // which never changes across in-app navigation once we're in real
-      // Telegram), so baking a computed *number* here was a bug: on cold
-      // load, Telegram hasn't necessarily reported its safe-area insets yet,
-      // so the very first navigation could snapshot 0 and every route after
-      // it inherited that stale value — until a full reload re-ran this
-      // late enough for the real value to be available. Writing a `calc()`
-      // *expression* that references the live Telegram CSS vars instead of
-      // their parsed values keeps this correct forever: the browser
-      // re-resolves it automatically whenever Telegram updates those vars,
-      // with no JS re-run required.
-      document.documentElement.style.setProperty(
-        '--header-clearance',
-        `calc(${DEFAULT_CLEARANCE}px + max(var(--tg-viewport-safe-area-inset-top, 0px), var(--tg-viewport-content-safe-area-inset-top, 0px)))`,
-      );
+      if (isRealTelegram) {
+        // No pill of ours inside Telegram: outside fullscreen its own header
+        // sits above the webview, so there's nothing to clear; in fullscreen
+        // its controls float over the content. index.css picks between the
+        // two off `body.is-fullscreen` and reads Telegram's safe-area vars
+        // live — this effect runs once, so it must not bake a value in (that
+        // used to snapshot insets Telegram hadn't reported yet).
+        document.documentElement.style.removeProperty('--header-clearance');
+        return;
+      }
+      document.documentElement.style.setProperty('--header-clearance', `${DEFAULT_CLEARANCE}px`);
       return;
     }
 

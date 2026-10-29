@@ -1,17 +1,42 @@
+import { lazy } from 'react';
 import type { ComponentType } from 'react';
 import { Navigate } from 'react-router-dom';
 
 import { SignIn } from '@/screens/SignIn/SignIn.tsx';
-import { PasswordRecovery } from '@/screens/PasswordRecovery/PasswordRecovery.tsx';
-import { NewPassword } from '@/screens/NewPassword/NewPassword.tsx';
 import { Home } from '@/screens/Home/Home.tsx';
-import { Deals } from '@/screens/Deals/Deals.tsx';
-import { DealDetail } from '@/screens/DealDetail/DealDetail.tsx';
-import { WithdrawCrypto } from '@/screens/WithdrawCrypto/WithdrawCrypto.tsx';
-import { WithdrawFiat } from '@/screens/WithdrawFiat/WithdrawFiat.tsx';
-import { WithdrawRequisites } from '@/screens/WithdrawRequisites/WithdrawRequisites.tsx';
-import { Profile } from '@/screens/Profile/Profile.tsx';
-import { OtcUnavailable } from '@/screens/OtcUnavailable/OtcUnavailable.tsx';
+
+// Sign-in and Home are the two possible first screens, so they ship in the main bundle. Every other
+// screen is its own chunk (the QR scanner and QR generator libraries go with the screens that use
+// them) and is prefetched once the app is up, so navigating never actually waits on the network.
+const loadDeals = () => import('@/screens/Deals/Deals.tsx');
+const loadProfile = () => import('@/screens/Profile/Profile.tsx');
+const loadDealDetail = () => import('@/screens/DealDetail/DealDetail.tsx');
+const loadWithdrawCrypto = () => import('@/screens/WithdrawCrypto/WithdrawCrypto.tsx');
+const loadWithdrawFiat = () => import('@/screens/WithdrawFiat/WithdrawFiat.tsx');
+const loadWithdrawRequisites = () => import('@/screens/WithdrawRequisites/WithdrawRequisites.tsx');
+const loadPasswordRecovery = () => import('@/screens/PasswordRecovery/PasswordRecovery.tsx');
+const loadNewPassword = () => import('@/screens/NewPassword/NewPassword.tsx');
+const loadOtcUnavailable = () => import('@/screens/OtcUnavailable/OtcUnavailable.tsx');
+
+const Deals = lazy(() => loadDeals().then((m) => ({ default: m.Deals })));
+const Profile = lazy(() => loadProfile().then((m) => ({ default: m.Profile })));
+const DealDetail = lazy(() => loadDealDetail().then((m) => ({ default: m.DealDetail })));
+const WithdrawCrypto = lazy(() => loadWithdrawCrypto().then((m) => ({ default: m.WithdrawCrypto })));
+const WithdrawFiat = lazy(() => loadWithdrawFiat().then((m) => ({ default: m.WithdrawFiat })));
+const WithdrawRequisites = lazy(() => loadWithdrawRequisites().then((m) => ({ default: m.WithdrawRequisites })));
+const PasswordRecovery = lazy(() => loadPasswordRecovery().then((m) => ({ default: m.PasswordRecovery })));
+const NewPassword = lazy(() => loadNewPassword().then((m) => ({ default: m.NewPassword })));
+const OtcUnavailable = lazy(() => loadOtcUnavailable().then((m) => ({ default: m.OtcUnavailable })));
+
+/** Warms every lazy screen's chunk in the background — tab bar targets first. */
+export function prefetchScreens(): void {
+  for (const load of [
+    loadDeals, loadProfile, loadDealDetail, loadWithdrawCrypto, loadWithdrawFiat,
+    loadWithdrawRequisites, loadOtcUnavailable, loadPasswordRecovery, loadNewPassword,
+  ]) {
+    load().catch(() => undefined);
+  }
+}
 
 export type HeaderVariant = 'close' | 'back' | 'home' | 'none';
 

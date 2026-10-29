@@ -51,3 +51,10 @@
   color: var(--text-muted);
   margin: 0 0 16px;
 }
+
+.withdraw-fiat__note {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-muted);
+  margin: 0;
+}

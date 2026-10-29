@@ -224,12 +224,19 @@ export const MOCK_ASSETS: Asset[] = [
   { ticker: 'USDT', name: 'Tether', balance: '56889.65', group: 'crypto' },
   { ticker: 'USDC', name: 'USD Coin', balance: '12500.00', group: 'crypto' },
   { ticker: 'BTC', name: 'Bitcoin', balance: '0.420000', group: 'crypto' },
+  // Dust (~$0.70) — what Home's "hide balances under $1" checkbox is for.
+  { ticker: 'ETH', name: 'Ethereum', balance: '0.0002', group: 'crypto' },
 ];
+
+/** Approximate USD rates for the mock `usdValue` — ordering and the under-$1 filter only. */
+export const MOCK_USD_RATES: Record<string, number> = {
+  KGS: 0.0114, RUB: 0.0125, USD: 1, USDT: 1, USDC: 1, BTC: 65000, ETH: 3500,
+};
 
 /** Deposit vs. trading account balances — the mutable source of truth lives in `accountsStore.ts`. */
 export const MOCK_ACCOUNTS: Accounts = {
-  deposit: { KGS: '10000000', RUB: '5000000', USD: '200000', USDT: '56889.65', USDC: '12500.00', BTC: '0.420000' },
-  trading: { KGS: '1000000', RUB: '0', USD: '0', USDT: '50000.00', USDC: '0', BTC: '0' },
+  deposit: { KGS: '10000000', RUB: '5000000', USD: '200000', USDT: '56889.65', USDC: '12500.00', BTC: '0.420000', ETH: '0.0002' },
+  trading: { KGS: '1000000', RUB: '0', USD: '0', USDT: '50000.00', USDC: '0', BTC: '0', ETH: '0' },
 };
 
 /**
