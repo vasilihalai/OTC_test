@@ -14,6 +14,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog/ConfirmDialog.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import {
+  ApiError,
   USE_REAL_API,
   acceptQuote,
   cancelDeal,
@@ -22,22 +23,25 @@ import {
   getAccounts,
   getDealById,
   getRequisites,
+  mapApiError,
+  openDealDocument,
   rejectQuote,
   requestNewRate,
   setDepositBalanceForTesting,
 } from '@/api/index.ts';
-import type { Deal, Requisites } from '@/api/index.ts';
+import type { Deal, DealDocumentKind, Requisites } from '@/api/index.ts';
 import { useRequireSession } from '@/store/session.ts';
+import { useToastStore } from '@/store/toast.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { useTransferModalStore } from '@/store/transferModal.ts';
-import { DEAL_STATUS_META, getDocumentAvailability, isHoldConfirmationStatus, isTerminalDealStatus, showsFullDetailsRows } from '@/lib/dealStatus.ts';
+import { DEAL_STATUS_META, getDetailRows, getDocumentAvailability, isHoldConfirmationStatus, isTerminalDealStatus } from '@/lib/dealStatus.ts';
 import { computeScenarioBalance, getMinDealAmount, isBalanceScenario, parseAmountValue } from '@/lib/balanceScenario.ts';
 import { formatAmount, parseAmountWithTicker } from '@/lib/money.ts';
 import { formatCountdown, msUntil } from '@/lib/countdown.ts';
 import { usePolling } from '@/lib/usePolling.ts';
 import { renderTemplate } from '@/lib/template.tsx';
 import { SAMPLE_DOCUMENT_URL } from '@/lib/sampleDocument.ts';
-import { openExternalLink } from '@/telegram/adapter.ts';
+import { notifyError, openExternalLink } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './DealDetail.css';
@@ -48,20 +52,17 @@ const DIRECTION_LABEL: Record<Deal['direction'], string> = {
   EXCHANGE: ru.deals.directionExchange,
 };
 
-function openDocument(href?: string) {
-  openExternalLink(href ?? SAMPLE_DOCUMENT_URL);
-}
+const DOCUMENT_ROWS: { kind: DealDocumentKind; name: string }[] = [
+  { kind: 'accept', name: ru.dealDetail.documentAccept },
+  { kind: 'payment', name: ru.dealDetail.documentPayment },
+  { kind: 'certificate', name: ru.dealDetail.documentCertificate },
+];
 
-// §7.5: "nameKey maps to a display name through i18n/ru.ts — do not render
-// the raw key." No vocabulary is documented anywhere in the eight Swagger
-// files, so this covers the three names the mock's own fixed table already
-// used (the most likely real ones) and falls back to the raw key itself —
-// visibly wrong is better than silently missing a document row.
-const DOCUMENT_NAME_KEYS: Record<string, string> = {
-  ACCEPT: ru.dealDetail.documentAccept,
-  PAYMENT: ru.dealDetail.documentPayment,
-  CERTIFICATE: ru.dealDetail.documentCertificate,
-};
+function showDealError(err: unknown, fallback: string) {
+  console.error('[DealDetail] action failed', err);
+  notifyError();
+  useToastStore.getState().show(err instanceof ApiError ? mapApiError(err) : fallback);
+}
 
 export function DealDetail() {
   useRequireSession();
@@ -117,10 +118,7 @@ export function DealDetail() {
   }
 
   const meta = deal && DEAL_STATUS_META[deal.status];
-  // Real mode: documents come from the deal itself (§7.5, preferred over a
-  // separate call). Mock mode: the static per-status table, unchanged.
-  const mockDocs = deal && !USE_REAL_API ? getDocumentAvailability(deal.status) : undefined;
-  const showDetails = deal && showsFullDetailsRows(deal.status);
+  const detailRows = deal && getDetailRows(deal.status);
 
   return (
     <div className="deal-detail">
@@ -142,63 +140,65 @@ export function DealDetail() {
             : <StatusHeroBody deal={deal} onUpdate={setDeal}/>
       )}
 
-      {deal && (
+      {deal && detailRows && (
         <div className="deal-detail__section">
           <h2 className="deal-detail__section-title">{ru.dealDetail.detailsTitle}</h2>
-          {showDetails && (
-            <>
-              {/* Real mode's detail response carries no createdAt (§7.4) — only the list does, and this screen can be deep-linked without ever having fetched that. Row just doesn't show rather than displaying blank. */}
-              {deal.date && <KeyValueRow label={ru.dealDetail.createdDateLabel} value={deal.date}/>}
-              <KeyValueRow label={ru.dealDetail.directionLabel} value={DIRECTION_LABEL[deal.direction]}/>
-              <KeyValueRow label={ru.dealDetail.giveLabel} value={deal.from}/>
-              <KeyValueRow label={ru.dealDetail.receiveLabel} value={deal.to ?? ru.common.tbd}/>
-            </>
-          )}
-          <KeyValueRow
-            label={ru.dealDetail.rateLabel}
-            value={deal.status === 'RATE_PENDING' || deal.status === 'RATE_STALE' ? ru.common.tbd : (deal.rate ?? ru.common.tbd)}
-          />
-        </div>
-      )}
-
-      {mockDocs && (
-        <div className="deal-detail__section">
-          <h2 className="deal-detail__section-title">{ru.dealDetail.documentsTitle}</h2>
-          <DocumentRow
-            name={ru.dealDetail.documentAccept}
-            enabled={mockDocs.accept}
-            caption={mockDocs.showCaption ? ru.dealDetail.documentUnavailableCaption : undefined}
-            onOpen={() => openDocument()}
-          />
-          <DocumentRow
-            name={ru.dealDetail.documentPayment}
-            enabled={mockDocs.payment}
-            caption={mockDocs.showCaption ? ru.dealDetail.documentUnavailableCaption : undefined}
-            onOpen={() => openDocument()}
-          />
-          <DocumentRow
-            name={ru.dealDetail.documentCertificate}
-            enabled={mockDocs.certificate}
-            caption={mockDocs.showCaption ? ru.dealDetail.documentUnavailableCaption : undefined}
-            onOpen={() => openDocument()}
-          />
-        </div>
-      )}
-
-      {deal?.documents && deal.documents.length > 0 && (
-        <div className="deal-detail__section">
-          <h2 className="deal-detail__section-title">{ru.dealDetail.documentsTitle}</h2>
-          {deal.documents.map((document) => (
-            <DocumentRow
-              key={document.nameKey}
-              name={DOCUMENT_NAME_KEYS[document.nameKey] ?? document.nameKey}
-              enabled={document.available}
-              caption={document.availabilityHint}
-              onOpen={() => openDocument(document.href)}
+          {/* Real mode's detail response carries no createdAt (§7.4) — a deep link that never fetched the list just doesn't show the row. */}
+          {deal.date && <KeyValueRow label={ru.dealDetail.createdDateLabel} value={deal.date}/>}
+          <KeyValueRow label={ru.dealDetail.directionLabel} value={DIRECTION_LABEL[deal.direction]}/>
+          {detailRows.give && <KeyValueRow label={ru.dealDetail.giveLabel} value={deal.from}/>}
+          {detailRows.receive && <KeyValueRow label={ru.dealDetail.receiveLabel} value={deal.to ?? ru.common.tbd}/>}
+          {detailRows.rate && (
+            <KeyValueRow
+              label={ru.dealDetail.rateLabel}
+              value={deal.status === 'RATE_PENDING' || deal.status === 'RATE_STALE' ? ru.common.tbd : (deal.rate ?? ru.common.tbd)}
             />
-          ))}
+          )}
         </div>
       )}
+
+      {deal && <DealDocuments deal={deal}/>}
+    </div>
+  );
+}
+
+function DealDocuments({ deal }: { deal: Deal }) {
+  const [opening, setOpening] = useState<DealDocumentKind>();
+  const availability = getDocumentAvailability(deal.status);
+
+  async function handleOpen(kind: DealDocumentKind, href?: string) {
+    if (!USE_REAL_API || !href) {
+      openExternalLink(SAMPLE_DOCUMENT_URL);
+      return;
+    }
+    setOpening(kind);
+    try {
+      await openDealDocument(href);
+    } catch (err) {
+      showDealError(err, ru.dealDetail.documentOpenError);
+    } finally {
+      setOpening(undefined);
+    }
+  }
+
+  return (
+    <div className="deal-detail__section">
+      <h2 className="deal-detail__section-title">{ru.dealDetail.documentsTitle}</h2>
+      {DOCUMENT_ROWS.map(({ kind, name }) => {
+        // Real mode also needs the backend to have the file: `documents` is undefined only in mock mode.
+        const backend = deal.documents?.find((document) => document.kind === kind);
+        const ready = !deal.documents || (!!backend?.available && !!backend.href);
+        return (
+          <DocumentRow
+            key={kind}
+            name={name}
+            enabled={availability[kind] && ready}
+            caption={availability.showCaption ? ru.dealDetail.documentUnavailableCaption : undefined}
+            loading={opening === kind}
+            onOpen={() => void handleOpen(kind, backend?.href)}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -249,6 +249,8 @@ function QuoteCard({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal) => v
       if (updated) {
         onUpdate(updated);
       }
+    } catch (err) {
+      showDealError(err, ru.common.errorGeneric);
     } finally {
       setConfirming(false);
     }
@@ -262,6 +264,8 @@ function QuoteCard({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal) => v
       if (updated) {
         onUpdate(updated);
       }
+    } catch (err) {
+      showDealError(err, ru.common.errorGeneric);
     } finally {
       setDeclining(false);
     }
@@ -385,8 +389,7 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
       // literally a request for new terms against the smaller frozen
       // amount, i.e. the deal moves into renegotiation, not straight to
       // RUNNING. Confirmed by the user directly — this is one of
-      // RATE_RENEGOTIATING's two real triggers (the other is
-      // `requestNewRate`, see actions.mock.ts).
+      // RATE_RENEGOTIATING's trigger.
       const patch = branch === 'short1'
         ? { status: 'RUNNING' as const, from: balanceLabel, to: recalculated }
         : branch === 'short'
@@ -396,6 +399,8 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
       if (updated) {
         onUpdate(updated);
       }
+    } catch (err) {
+      showDealError(err, ru.common.errorGeneric);
     } finally {
       setConfirming(false);
     }
@@ -409,6 +414,8 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
       if (updated) {
         onUpdate(updated);
       }
+    } catch (err) {
+      showDealError(err, ru.common.errorGeneric);
     } finally {
       setDeclining(false);
     }
@@ -478,6 +485,8 @@ function StatusHeroBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal)
       if (updated) {
         onUpdate(updated);
       }
+    } catch (err) {
+      showDealError(err, ru.common.errorGeneric);
     } finally {
       setBusy(false);
     }
@@ -491,6 +500,8 @@ function StatusHeroBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal)
       if (updated) {
         onUpdate(updated);
       }
+    } catch (err) {
+      showDealError(err, ru.common.errorGeneric);
     } finally {
       setBusy(false);
     }

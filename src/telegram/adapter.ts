@@ -1,4 +1,4 @@
-import { copyTextToClipboard, hapticFeedback, miniApp, openLink } from '@tma.js/sdk-react';
+import { copyTextToClipboard, hapticFeedback, miniApp, openLink, retrieveLaunchParams } from '@tma.js/sdk-react';
 
 import { isRealTelegram } from '@/telegram/environment.ts';
 
@@ -39,6 +39,43 @@ export function openExternalLink(url: string): void {
     }
   }
   window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+/** Whether `window.open` gives a real browser tab here: native Telegram clients have no tabs to put a blob: URL in. */
+function hasBrowserTabs(): boolean {
+  if (!isRealTelegram) {
+    return true;
+  }
+  try {
+    return retrieveLaunchParams().tgWebAppPlatform.startsWith('web');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Shows a PDF that needs the session token to download, so it can't be handed
+ * to the external browser as a link. The tab is opened before the download: a
+ * popup opened after an await is blocked. Must be called from the tap handler.
+ */
+export async function openFetchedPdf(load: () => Promise<Blob>): Promise<void> {
+  const tab = hasBrowserTabs() ? window.open('', '_blank') : null;
+  try {
+    const blob = await load();
+    if (await blob.slice(0, 4).text() !== '%PDF') {
+      throw new Error(`Expected a PDF, got ${blob.type || 'an untyped response'}`);
+    }
+    const url = URL.createObjectURL(blob.slice(0, blob.size, 'application/pdf'));
+    if (tab) {
+      tab.location.href = url;
+    } else if (!window.open(url, '_blank')) {
+      throw new Error('This client cannot open a downloaded file, the backend must return a signed link');
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
 }
 
 export async function copyToClipboard(text: string): Promise<void> {

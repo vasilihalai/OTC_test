@@ -71,12 +71,14 @@ export type DealStatus =
 
 export type DealDirection = 'BUY' | 'SELL' | 'EXCHANGE';
 
+/** The three client-facing documents of a deal (BRD FR-7). */
+export type DealDocumentKind = 'accept' | 'payment' | 'certificate';
+
 /** `GET /otc/deals/{id}/documents` (§7.5), or embedded in `OtcOperationDetails` — preferred when present, to save a round trip. */
 export interface DealDocument {
-  nameKey: string;
-  href: string;
+  kind: DealDocumentKind;
+  href?: string;
   available: boolean;
-  availabilityHint?: string;
 }
 
 export interface Deal {

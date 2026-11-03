@@ -1,4 +1,4 @@
-import type { DealStatus } from '@/api/index.ts';
+import type { DealDocumentKind, DealStatus } from '@/api/index.ts';
 import { ru } from '@/i18n/ru.ts';
 
 interface StatusMeta {
@@ -36,20 +36,20 @@ export function matchesFilter(status: DealStatus, filter: DealFilter): boolean {
   return status === 'DECLINED';
 }
 
-export interface DocumentAvailability {
-  accept: boolean;
-  payment: boolean;
-  certificate: boolean;
-  showCaption: boolean;
-}
+export type DocumentAvailability = Record<DealDocumentKind, boolean> & { showCaption: boolean };
 
-/** §4's document-availability table. */
+/**
+ * BRD FR-7 and the OTC detail frames: the acceptance and the payment order
+ * after the quote is confirmed, the certificate after execution. A declined
+ * deal never gets them, so unlike the other locked rows it has no "станет
+ * доступен позже" caption.
+ */
 export function getDocumentAvailability(status: DealStatus): DocumentAvailability {
   if (status === 'DONE') {
     return { accept: true, payment: true, certificate: true, showCaption: false };
   }
   if (status === 'DECLINED') {
-    return { accept: false, payment: false, certificate: false, showCaption: true };
+    return { accept: false, payment: false, certificate: false, showCaption: false };
   }
   if (status === 'RATE_PENDING' || status === 'RATE_ACTIVE' || status === 'RATE_STALE' || status === 'RATE_RENEGOTIATING') {
     return { accept: false, payment: false, certificate: false, showCaption: true };
@@ -63,9 +63,30 @@ export function isHoldConfirmationStatus(status: DealStatus): boolean {
   return status === 'AWAITING_FUNDS';
 }
 
-/** `Детали` always shows the full row set now — every status, including the rate-in-flight ones, carries Дата создания/Направление alongside Курс. */
-export function showsFullDetailsRows(_status: DealStatus): boolean {
-  return true;
+export interface DealDetailRows {
+  give: boolean;
+  receive: boolean;
+  rate: boolean;
+}
+
+/**
+ * What `Детали` shows besides Дата создания/Направление, per the OTC detail
+ * frames. An active quote carries its amounts and rate on the card above;
+ * "Вы получите" only appears once the rate behind it is settled.
+ */
+export function getDetailRows(status: DealStatus): DealDetailRows {
+  switch (status) {
+    case 'RATE_ACTIVE':
+      return { give: false, receive: false, rate: false };
+    case 'RATE_PENDING':
+      return { give: false, receive: false, rate: true };
+    case 'RATE_STALE':
+    case 'AWAITING_FUNDS':
+    case 'RATE_RENEGOTIATING':
+      return { give: true, receive: false, rate: true };
+    default:
+      return { give: true, receive: true, rate: true };
+  }
 }
 
 /** §7.7 — `EXECUTED`/`CANCELED`/`ERROR` (→ `DONE`/`DECLINED`) stop polling entirely; nothing about them changes server-side again. */

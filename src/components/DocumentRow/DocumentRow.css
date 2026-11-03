@@ -13,19 +13,21 @@
 .document-row__main {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 14px;
   line-height: 20px;
   font-weight: 600;
+  text-align: left;
 }
 
 .document-row--disabled .document-row__main {
   color: var(--text-disabled);
+  font-weight: 500;
   cursor: default;
 }
 
@@ -42,5 +44,4 @@
   font-size: 14px;
   line-height: 20px;
   color: var(--text-quiet);
-  padding-left: 26px;
 }

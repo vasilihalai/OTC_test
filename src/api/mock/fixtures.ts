@@ -54,7 +54,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'SELL',
     from: '25 000 USDT',
     to: '100 954 500 KGS',
-    rate: '4 038.18 KGS',
+    rate: '1 USDT = 4 038.18 KGS',
     ticker: 'USDT',
     ratePerUnit: '4 038.18',
     rateUnitLabel: 'KGS за 1 USDT',
@@ -77,7 +77,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'BUY',
     from: '2.540000 BTC',
     to: '159 275 USD',
-    rate: '62 706.69 USD',
+    rate: '1 BTC = 62 706.69 USD',
     ticker: 'BTC',
   },
   {
@@ -97,7 +97,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'SELL',
     from: '20 000 USDT',
     to: '7 420 000 KGS',
-    rate: '371.00 KGS',
+    rate: '1 USDT = 371.00 KGS',
     ticker: 'USDT',
   },
   {
@@ -107,7 +107,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'BUY',
     from: '1 000 000 KGS',
     to: '8 500.51 USDT',
-    rate: '117.64 KGS',
+    rate: '1 USDT = 117.64 KGS',
     ticker: 'KGS',
   },
   {
@@ -117,7 +117,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'EXCHANGE',
     from: '4 000 000 KGS',
     to: '11 454.75 USDT',
-    rate: '349.20 KGS',
+    rate: '1 USDT = 349.20 KGS',
     ticker: 'KGS',
   },
   {
@@ -127,7 +127,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'EXCHANGE',
     from: '10 000 USD',
     to: '890 000 000 KGS',
-    rate: '89 000.00 KGS',
+    rate: '1 USD = 89 000.00 KGS',
     ticker: 'USD',
   },
   {
@@ -137,7 +137,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'BUY',
     from: '3 000 000 KGS',
     to: '25 500.00 USDT',
-    rate: '117.65 KGS',
+    rate: '1 USDT = 117.65 KGS',
     ticker: 'KGS',
   },
   {
@@ -147,7 +147,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'SELL',
     from: '18 000 USDC',
     to: '6 300 000 KGS',
-    rate: '350.00 KGS',
+    rate: '1 USDC = 350.00 KGS',
     ticker: 'USDC',
   },
   {
@@ -157,7 +157,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'EXCHANGE',
     from: '5 000 USD',
     to: '445 000 000 KGS',
-    rate: '89 000.00 KGS',
+    rate: '1 USD = 89 000.00 KGS',
     ticker: 'USD',
   },
   {
@@ -167,7 +167,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'BUY',
     from: '800 000 RUB',
     to: '9 150.00 USDT',
-    rate: '87.43 RUB',
+    rate: '1 USDT = 87.43 RUB',
     ticker: 'RUB',
   },
   {
@@ -177,7 +177,7 @@ export const MOCK_DEALS: Deal[] = [
     direction: 'SELL',
     from: '0.300000 BTC',
     to: '1 800 000 KGS',
-    rate: '6 000 000.00 KGS',
+    rate: '1 BTC = 6 000 000.00 KGS',
     ticker: 'BTC',
   },
 ];

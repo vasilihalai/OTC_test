@@ -60,6 +60,7 @@ export function RequisitesPanel({ requisites }: { requisites: FiatRequisites | C
           <FiatRow key={label} label={label} value={value} copy={() => copy(value)}/>
         ))}
         <button type="button" className={e('copy-all')} onClick={() => copy(allText)}>
+          <CopyIcon/>
           {ru.dealDetail.requisitesCopyAll}
         </button>
       </Panel>

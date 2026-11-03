@@ -47,6 +47,10 @@
   color: var(--text-body);
 }
 
+.balance-block__deal-amount {
+  font-weight: 600;
+}
+
 .balance-block .key-value-row {
   padding: 8px 0;
 }

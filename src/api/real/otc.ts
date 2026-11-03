@@ -1,11 +1,13 @@
-import type { Deal, DealDirection, OtcAccessResult, Stats } from '@/api/types.ts';
-import { apiFetch } from '@/api/http.ts';
+import type { Deal, DealDirection, DealDocument, DealDocumentKind, OtcAccessResult, Stats } from '@/api/types.ts';
+import { apiFetch, apiFetchBlob } from '@/api/http.ts';
 import { ApiError } from '@/api/real/http/apiError.ts';
 import { describeShape } from '@/api/real/http/responseShape.ts';
+import { gatewayPath } from '@/api/real/http/servicePaths.ts';
 import { useToastStore } from '@/store/toast.ts';
 import { formatDealDate } from '@/lib/date.ts';
-import { formatAmount } from '@/lib/money.ts';
+import { formatAmount, formatAmountInput } from '@/lib/money.ts';
 import { type OtcRealStatus, mapOtcStatus } from '@/lib/otcStatus.ts';
+import { openExternalLink, openFetchedPdf } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 /**
@@ -55,6 +57,27 @@ export async function getStats(): Promise<Stats> {
 
 const DIRECTION_MAP: Record<string, DealDirection> = { buy: 'BUY', sell: 'SELL', exchange: 'EXCHANGE' };
 
+// The detail response has no createdAt (§7.4), only the list does: kept from
+// the list so the card's "Дата создания" row still fills in.
+const createdAtById = new Map<string, string>();
+
+interface RawRateFields {
+  direction: 'buy' | 'sell' | 'exchange';
+  assetFrom: string;
+  assetTo: string;
+  rate: string | null;
+}
+
+/** ТЗ §5.1: `rate` is the "to" amount per 1 "from" on a sale, the "from" amount per 1 "to" on a purchase. */
+function rateFields(raw: RawRateFields): Pick<Deal, 'rate' | 'ratePerUnit' | 'rateUnitLabel'> {
+  if (!raw.rate) {
+    return { rate: null };
+  }
+  const [base, quote] = raw.direction === 'buy' ? [raw.assetTo, raw.assetFrom] : [raw.assetFrom, raw.assetTo];
+  const value = formatAmountInput(raw.rate.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''));
+  return { rate: `1 ${base} = ${value} ${quote}`, ratePerUnit: value, rateUnitLabel: `${quote} за 1 ${base}` };
+}
+
 interface RawDealListItem {
   operationId: string;
   requestNumber: string;
@@ -70,6 +93,7 @@ interface RawDealListItem {
 }
 
 function mapListItem(raw: RawDealListItem): Deal {
+  createdAtById.set(raw.operationId, raw.createdAt);
   return {
     id: raw.operationId,
     requestNumber: raw.requestNumber,
@@ -78,10 +102,9 @@ function mapListItem(raw: RawDealListItem): Deal {
     direction: DIRECTION_MAP[raw.direction] ?? 'EXCHANGE',
     from: `${formatAmount(raw.amountFrom, raw.assetFrom)} ${raw.assetFrom}`,
     to: raw.amountTo ? `${formatAmount(raw.amountTo, raw.assetTo)} ${raw.assetTo}` : null,
-    rate: raw.rate,
+    ...rateFields(raw),
     ticker: raw.assetFrom,
     quoteExpiresAt: raw.rateExpiresAt ?? undefined,
-    ratePerUnit: raw.rate ?? undefined,
   };
 }
 
@@ -101,13 +124,39 @@ export async function getDeals(filters: OtcListFilters = {}, size = 20): Promise
 
 interface RawDocument {
   nameKey: string;
-  href: string;
-  available: boolean;
-  availabilityHint?: string;
+  href?: string | null;
+  available?: boolean;
+}
+
+/**
+ * dev sends PAYMENT_INSTRUCTION and EXECUTION_ACT; the acceptance's key isn't
+ * known yet because no such document comes back. Anything else stays off
+ * screen: FR-7's "Операция трейдера" must never reach the client.
+ */
+function documentKind(nameKey: string): DealDocumentKind | undefined {
+  if (nameKey === 'PAYMENT_INSTRUCTION') {
+    return 'payment';
+  }
+  if (nameKey === 'EXECUTION_ACT') {
+    return 'certificate';
+  }
+  return nameKey.includes('ACCEPT') ? 'accept' : undefined;
+}
+
+function mapDocuments(raw: RawDocument[] = []): DealDocument[] {
+  return raw.flatMap((document) => {
+    const kind = documentKind(document.nameKey);
+    if (!kind) {
+      console.warn('[otc] Unknown document, not shown:', document.nameKey);
+      return [];
+    }
+    return [{ kind, href: document.href ?? undefined, available: document.available !== false }];
+  });
 }
 
 interface RawDealDetail {
   requestNumber: string;
+  createdAt?: string;
   direction: 'buy' | 'sell' | 'exchange';
   assetFrom: string;
   assetTo: string;
@@ -119,25 +168,25 @@ interface RawDealDetail {
   rate: string | null;
   balance: string | null;
   missingAmount: string | null;
-  documents: RawDocument[];
+  documents?: RawDocument[];
 }
 
 function mapDetail(operationId: string, raw: RawDealDetail): Deal {
+  const createdAt = raw.createdAt ?? createdAtById.get(operationId);
   return {
     id: operationId,
     requestNumber: raw.requestNumber,
     status: mapOtcStatus(raw.status),
-    date: '', // not part of the detail response (§7.4) — only the list carries createdAt; the detail header doesn't display a date today anyway.
+    date: createdAt ? formatDealDate(createdAt) : '',
     direction: DIRECTION_MAP[raw.direction] ?? 'EXCHANGE',
     from: `${formatAmount(raw.amountFrom, raw.assetFrom)} ${raw.assetFrom}`,
     to: raw.amountTo ? `${formatAmount(raw.amountTo, raw.assetTo)} ${raw.assetTo}` : null,
-    rate: raw.rate,
+    ...rateFields(raw),
     ticker: raw.assetFrom,
     quoteExpiresAt: raw.rateExpiresAt ?? undefined,
-    ratePerUnit: raw.rate ?? undefined,
     balance: raw.balance ?? undefined,
     missingAmount: raw.missingAmount ?? undefined,
-    documents: raw.documents,
+    documents: mapDocuments(raw.documents),
     detailsStatus: raw.detailsStatus,
   };
 }
@@ -195,4 +244,37 @@ export async function sendOtcCommand(operationId: string, command: OtcCommand): 
     }
   }
   return getDealById(operationId);
+}
+
+const NEW_RATE_RECHECKS = 3;
+
+/**
+ * The OTC process applies a command asynchronously, so the refetch right after
+ * it can still read the expired quote. Rechecked briefly so the tap lands on
+ * "Оператор готовит курс" instead of looking ignored until the next 10s poll.
+ */
+export async function requestNewRate(operationId: string): Promise<Deal | undefined> {
+  let deal = await sendOtcCommand(operationId, 'REQUEST_NEW_RATE');
+  for (let attempt = 0; attempt < NEW_RATE_RECHECKS && deal?.status === 'RATE_STALE'; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    deal = await getDealById(operationId);
+  }
+  if (deal?.status === 'RATE_STALE') {
+    console.warn('[otc] Deal still EXPIRED after REQUEST_NEW_RATE', operationId, deal.detailsStatus);
+  }
+  return deal;
+}
+
+/**
+ * FR-13.8: a document opens in the external browser from a short-lived signed
+ * link. A bare gateway URL needs the session token, which that browser doesn't
+ * have — it would land on a sign-in screen — so it's downloaded here instead.
+ */
+export async function openDealDocument(href: string): Promise<void> {
+  const path = gatewayPath('financial', href);
+  if (path === undefined) {
+    openExternalLink(href);
+    return;
+  }
+  await openFetchedPdf(() => apiFetchBlob(path));
 }

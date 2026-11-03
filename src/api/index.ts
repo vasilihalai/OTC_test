@@ -192,10 +192,12 @@ export async function confirmHold(dealId: string, mockPatch: ConfirmDealPatch): 
   return USE_REAL_API ? realOtc.sendOtcCommand(dealId, 'CONFIRM_HOLD') : mockActions.confirmDeal(dealId, mockPatch);
 }
 
-/** RATE_STALE's "Запросить новый курс" — always lands in `RATE_RENEGOTIATING`, confirmed directly: this is one of its two real triggers (the other is `confirmHold`'s "short" branch). */
+/** RATE_STALE's "Запросить новый курс" — back to waiting for the operator's quote (scenario С-08). */
 export async function requestNewRate(dealId: string): Promise<Deal | undefined> {
-  return USE_REAL_API ? realOtc.sendOtcCommand(dealId, 'REQUEST_NEW_RATE') : mockActions.requestNewRate(dealId);
+  return USE_REAL_API ? realOtc.requestNewRate(dealId) : mockActions.requestNewRate(dealId);
 }
+
+export const openDealDocument = realOtc.openDealDocument;
 
 /** RATE_PENDING's and RATE_RENEGOTIATING's "Отменить заявку" — CANCEL. */
 export async function cancelDeal(dealId: string): Promise<Deal | undefined> {
@@ -221,6 +223,7 @@ export type {
   DealStatus,
   DealDirection,
   DealDocument,
+  DealDocumentKind,
   OtcAccessResult,
   Asset,
   AssetGroup,

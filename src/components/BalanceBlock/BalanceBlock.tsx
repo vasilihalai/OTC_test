@@ -61,7 +61,7 @@ export function BalanceBlock({ balance, ticker, dealAmount, shortfall, onTransfe
         {balance}
         <span className={e('ticker')}>{ticker}</span>
       </div>
-      <KeyValueRow label={ru.dealDetail.dealAmountLabel} value={dealAmount}/>
+      <KeyValueRow label={ru.dealDetail.dealAmountLabel} value={<b className="balance-block__deal-amount">{dealAmount}</b>}/>
       {shortfall && <KeyValueRow label={ru.dealDetail.shortfallLabel} value={shortfall}/>}
     </div>
   );

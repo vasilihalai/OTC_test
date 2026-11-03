@@ -15,7 +15,7 @@ import { useCopy } from '@/lib/useCopy.ts';
 import { groupOf4 } from '@/lib/text.ts';
 import { maskEmail } from '@/lib/mask.ts';
 import { SAMPLE_DOCUMENT_URL } from '@/lib/sampleDocument.ts';
-import { notifyError, openExternalLink } from '@/telegram/adapter.ts';
+import { notifyError, openExternalLink, openFetchedPdf } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './Profile.css';
@@ -162,9 +162,7 @@ export function Profile() {
 
   // §8 — mock mode just opens the bundled sample PDF directly (nothing to
   // load, no loading/error states to simulate). Real mode fetches the
-  // certificate as a file body (not a URL, question B13), turns it into a
-  // blob URL, opens that, and revokes it shortly after — long enough for
-  // the external browser to have started loading it.
+  // certificate as a file body (not a URL, question B13).
   async function handleCertificate() {
     if (!USE_REAL_API) {
       openExternalLink(SAMPLE_DOCUMENT_URL);
@@ -175,11 +173,9 @@ export function Profile() {
     }
     setCertificateLoading(true);
     try {
-      const blob = await getAccountCertificate();
-      const url = URL.createObjectURL(blob);
-      openExternalLink(url);
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
+      await openFetchedPdf(getAccountCertificate);
+    } catch (err) {
+      console.error('[Profile] certificate failed to open', err);
       notifyError();
       useToastStore.getState().show(ru.common.errorGeneric);
     } finally {
