@@ -10,8 +10,6 @@ export interface SummaryRow {
   key: string;
   label: string;
   value: ReactNode;
-  /** Second line under the value, rendered in 600 weight (e.g. a contract-address tail). */
-  tail?: ReactNode;
 }
 
 export interface SummaryCardProps {
@@ -27,10 +25,7 @@ export function SummaryCard({ rows, totalLabel, totalValue, caption }: SummaryCa
       {rows.map((row) => (
         <div key={row.key} className={e('row')}>
           <span className={e('label')}>{row.label}</span>
-          <span className={e('value-group')}>
-            <span className={e('value')}>{row.value}</span>
-            {row.tail && <span className={e('tail')}>{row.tail}</span>}
-          </span>
+          <span className={e('value')}>{row.value}</span>
         </div>
       ))}
       <div className={e('row', 'total')}>

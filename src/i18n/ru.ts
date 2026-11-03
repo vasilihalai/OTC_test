@@ -59,8 +59,6 @@ export const ru = {
   authenticator: {
     title: 'Введите код из Google Authenticator',
     body: 'Проверьте свое приложение\nGoogle Authenticator. Введите код,\nуказанный в приложении',
-    syncHelpAction: 'Возникли проблемы с синхронизацией?',
-    syncHelpFallback: 'Напишите вашему менеджеру в Telegram',
   },
   home: {
     heroTitle: 'OTC',
@@ -206,7 +204,6 @@ export const ru = {
     payoutCaption: 'За вычетом комиссии сети',
     totalDebitLabel: 'Сумма к списанию',
     contractAddressLabel: 'Адрес контракта в блокчейне',
-    contractTailPrefixText: 'Заканчивается на',
     warningTitle: 'Внимание!',
     cryptoWarning: 'Убедитесь, что адрес кошелька указан корректно до подтверждения транзакции! После подтверждения, средства будут списаны и транзакцию будет невозможно отменить или вернуть.',
     confirmAction: 'Подтвердить',

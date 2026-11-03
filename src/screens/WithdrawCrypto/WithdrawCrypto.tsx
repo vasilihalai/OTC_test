@@ -408,8 +408,7 @@ export function WithdrawCrypto() {
                 ? [{
                   key: 'contract',
                   label: ru.withdraw.contractAddressLabel,
-                  value: ru.withdraw.contractTailPrefixText,
-                  tail: quote.contractAddress.slice(-8),
+                  value: `…${quote.contractAddress.slice(-8)}`,
                 }]
                 : []),
               { key: 'fee', label: ru.withdraw.feeLabel, value: `${formatAmount(quote.commission, ticker)} ${ticker}` },

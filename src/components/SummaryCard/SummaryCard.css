@@ -25,15 +25,8 @@
   color: var(--text-strong);
 }
 
-.summary-card__value-group {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  text-align: right;
-}
-
 .summary-card__value {
+  flex-shrink: 0;
   font-size: 14px;
   line-height: 20px;
   color: var(--text-body);
@@ -46,13 +39,6 @@
   font-weight: 600;
   line-height: 24px;
   color: var(--text-strong);
-}
-
-.summary-card__tail {
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-  color: var(--text-body);
 }
 
 .summary-card__caption {

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import { AuthenticatorHelpLink } from '@/components/AuthenticatorHelpLink/AuthenticatorHelpLink.tsx';
 import { Modal } from '@/components/Modal/Modal.tsx';
 import { CodeInput } from '@/components/CodeInput/CodeInput.tsx';
 import { Spinner } from '@/components/Spinner/Spinner.tsx';
@@ -60,7 +59,6 @@ export function AuthenticatorModal({ open, onClose, onSubmit, onVerified }: Auth
         <p className="authenticator-modal__status"><Spinner size={16}/>{ru.verification.verifyingLabel}</p>
       )}
       {error && <p className="authenticator-modal__error">{error}</p>}
-      <AuthenticatorHelpLink/>
     </Modal>
   );
 }

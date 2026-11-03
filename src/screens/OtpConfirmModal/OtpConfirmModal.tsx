@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import { AuthenticatorHelpLink } from '@/components/AuthenticatorHelpLink/AuthenticatorHelpLink.tsx';
 import { Modal } from '@/components/Modal/Modal.tsx';
 import { CodeInput } from '@/components/CodeInput/CodeInput.tsx';
 import { Button } from '@/components/Button/Button.tsx';
@@ -140,7 +139,6 @@ export function OtpConfirmModal({
         <p className="otp-confirm-modal__status"><Spinner size={16}/>{ru.verification.verifyingLabel}</p>
       )}
       {error && <p className="otp-confirm-modal__error">{error}</p>}
-      {!isEmail && <AuthenticatorHelpLink/>}
     </Modal>
   );
 }

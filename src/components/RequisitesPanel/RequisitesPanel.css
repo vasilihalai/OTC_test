@@ -26,12 +26,11 @@
 }
 
 .requisites-panel__row-value-text {
+  min-width: 0;
   font-size: 14px;
   line-height: 20px;
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .requisites-panel__copy {
@@ -136,9 +135,8 @@
   line-height: 20px;
   font-weight: 600;
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-all;
+  text-wrap: balance;
 }
 
 /* A single asset: filled, not a field to change. */
