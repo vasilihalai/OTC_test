@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
 import { KeyValueRow } from '@/components/KeyValueRow/KeyValueRow.tsx';
@@ -450,7 +450,7 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
       )}
 
       <Button variant="accent" loading={confirming} disabled={branch === 'belowmin'} onClick={() => void handleConfirm()}>
-        {ru.dealDetail.confirmPaymentAction}
+        {ru.dealDetail.confirmDealAction}
       </Button>
       <Button
         type="button"
@@ -475,6 +475,7 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
 }
 
 function StatusHeroBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal) => void }) {
+  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
 
@@ -561,6 +562,12 @@ function StatusHeroBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal)
           tone="success"
           title={ru.dealDetail.heroDoneTitle}
           subtitle={renderTemplate(ru.dealDetail.heroDoneSubtitle, { amount: deal.to ?? deal.from })}
+          // BRD FR-13.5: the mini app's only history is the OTC deals list.
+          action={(
+            <Button type="button" variant="link" className="status-hero__history" onClick={() => navigate('/deals')}>
+              {ru.dealDetail.historyAction}
+            </Button>
+          )}
         />
       );
     case 'DECLINED':

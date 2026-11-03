@@ -11,10 +11,10 @@
 }
 
 .status-hero__title {
-  margin-top: 8px;
-  font-size: 18px;
+  margin-top: 12px;
+  font-size: 16px;
   line-height: 24px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-strong);
 }
 
@@ -38,6 +38,15 @@
 
 .status-hero__action:has(.button--accent) {
   margin-top: 10px;
+}
+
+.status-hero__action:has(.status-hero__history) {
+  margin-top: 4px;
+}
+
+.status-hero__history {
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .status-hero--success {
