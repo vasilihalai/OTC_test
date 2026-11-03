@@ -31,9 +31,9 @@
 .setting-row__label {
   flex: 1;
   min-width: 0;
-  font-size: 16px;
-  line-height: 24px;
-  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-body);
 }
 
 .setting-row--danger .setting-row__icon,
@@ -41,17 +41,18 @@
   color: var(--accent);
 }
 
+.setting-row--danger .setting-row__label {
+  font-size: 16px;
+  line-height: 24px;
+}
+
 .setting-row__value-group {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 16px;
-  line-height: 24px;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 600;
-  color: var(--text-primary);
-}
-
-.setting-row__value-group svg {
-  color: var(--text-quiet);
+  color: var(--text-body);
 }

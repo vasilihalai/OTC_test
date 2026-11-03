@@ -11,8 +11,8 @@
   aspect-ratio: 1;
   min-width: 0;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-raised);
+  border: 1px solid transparent;
+  background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: clamp(18px, 6vw, 24px);
   line-height: 1;

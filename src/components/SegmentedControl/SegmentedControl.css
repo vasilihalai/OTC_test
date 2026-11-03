@@ -1,6 +1,5 @@
 .segmented-control {
   display: inline-flex;
-  gap: 8px;
 }
 
 .segmented-control__item {
@@ -8,13 +7,13 @@
   align-items: center;
   gap: 8px;
   height: 36px;
-  padding: 0 14px;
+  padding: 0 12px;
   border-radius: 30px;
   border: none;
   background: transparent;
   color: var(--text-quiet);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   transition: color 0.18s ease, background-color 0.18s ease, transform 0.1s ease;
 }
@@ -26,4 +25,5 @@
 .segmented-control__item--active {
   background: var(--bg-raised);
   color: var(--text-strong);
+  font-weight: 600;
 }

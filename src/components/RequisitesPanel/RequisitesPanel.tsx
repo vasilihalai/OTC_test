@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
+import { CopyIcon } from '@/components/CopyIcon/CopyIcon.tsx';
 import { Select } from '@/components/Select/Select.tsx';
 import { CurrencyIcon } from '@/components/CurrencyIcon/CurrencyIcon.tsx';
 import { bem } from '@/css/bem.ts';
@@ -12,15 +13,6 @@ import { ru } from '@/i18n/ru.ts';
 import './RequisitesPanel.css';
 
 const [, e] = bem('requisites-panel');
-
-function CopyIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2.5" y="2.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-      <path d="M5.5 13.5H12a1.5 1.5 0 0 0 1.5-1.5V5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-    </svg>
-  );
-}
 
 function FiatRow({ label, value, copy }: { label: string; value: string; copy: () => void }) {
   return (
@@ -120,7 +112,7 @@ function CryptoRequisitesBody({ requisites }: { requisites: CryptoRequisites }) 
       </div>
       <p className={e('qr-caption')}>{ru.dealDetail.requisitesScanQr}</p>
       <div className={e('qr-plate')}>
-        {qr && <img src={qr} width={160} height={160} alt=""/>}
+        {qr && <img src={qr} width={132} height={132} alt=""/>}
         <span className={e('qr-mark')} aria-hidden="true">X</span>
       </div>
       <p className={e('qr-caption', 'divider')}>{ru.dealDetail.requisitesOrCopy}</p>

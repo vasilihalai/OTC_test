@@ -301,6 +301,7 @@ export const MOCK_SAVED_REQUISITES: SavedRequisite[] = [
     bankName: 'АО «Т-Банк»',
     bic: '044525974',
     inn: '7710140679',
+    kpp: '771001001',
     correspondentAccount: '30101810145250000974',
   },
 ];

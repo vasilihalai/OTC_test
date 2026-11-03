@@ -17,6 +17,8 @@ export interface SelectOption<T extends string> {
   secondary?: string;
   icon?: ReactNode;
   disabled?: boolean;
+  /** Stands for "nothing chosen yet": dimmed in the closed box. */
+  placeholder?: boolean;
 }
 
 export interface SelectProps<T extends string> {
@@ -27,14 +29,6 @@ export interface SelectProps<T extends string> {
   layout?: SelectLayout;
   /** Shown instead of the box when `options` is empty. */
   emptyState?: ReactNode;
-}
-
-function CheckIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M3.5 8.5l3 3 6-7" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
 }
 
 function ChevronIcon({ open }: { open: boolean }) {
@@ -75,7 +69,7 @@ function Row<T extends string>({ option, layout }: { option: SelectOption<T>; la
       </span>
     );
   }
-  return <span className={e('row-plain')}>{option.label}</span>;
+  return <span className={e('row-plain', { placeholder: !!option.placeholder })}>{option.label}</span>;
 }
 
 export function Select<T extends string>({ label, options, value, onChange, layout = 'plain', emptyState }: SelectProps<T>) {
@@ -136,8 +130,7 @@ export function Select<T extends string>({ label, options, value, onChange, layo
                     setOpen(false);
                   }}
                 >
-                  <Row option={option} layout={layout}/>
-                  {option.value === value && <CheckIcon/>}
+                  <Row option={{ ...option, placeholder: false }} layout={layout}/>
                 </button>
               ))}
             </div>

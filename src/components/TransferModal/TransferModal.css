@@ -9,10 +9,11 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: 24px;
 }
 
 .transfer-modal__accounts .select__box {
-  background: var(--bg-raised);
+  background: var(--bg-elevated);
   border-color: transparent;
   min-height: 44px;
 }
@@ -40,11 +41,16 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--bg-raised);
+  background: var(--bg-elevated);
   border: none;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--text-body);
   transition: transform 0.1s ease;
+}
+
+.transfer-modal__swap svg {
+  width: 20px;
+  height: 20px;
 }
 
 .transfer-modal__swap:active {
@@ -53,4 +59,8 @@
 
 .transfer-modal__footer {
   gap: 12px;
+}
+
+.transfer-modal__accounts .select__row-plain {
+  color: var(--text-body);
 }

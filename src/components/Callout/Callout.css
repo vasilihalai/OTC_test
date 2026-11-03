@@ -4,6 +4,7 @@
   font-size: 14px;
   line-height: 20px;
   color: var(--text-muted);
+  white-space: pre-line;
 }
 
 .callout b,
@@ -14,7 +15,6 @@
 
 .callout--neutral {
   background: var(--bg-surface);
-  text-align: center;
 }
 
 .callout--warning {

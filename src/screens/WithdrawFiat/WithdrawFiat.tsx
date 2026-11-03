@@ -21,16 +21,24 @@ import { ru } from '@/i18n/ru.ts';
 
 import './WithdrawFiat.css';
 
-function MethodIcon() {
+/** Bakai Bank has its mark in the frames; every other bank gets the generic building. */
+function MethodIcon({ paymentType }: { paymentType: string }) {
   return (
     <div className="withdraw-fiat__method-icon" aria-hidden="true">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M8 1.5 14 5H2l6-3.5Z" fill="currentColor"/>
-        <rect x="2" y="6.5" width="2" height="6" fill="currentColor"/>
-        <rect x="7" y="6.5" width="2" height="6" fill="currentColor"/>
-        <rect x="12" y="6.5" width="2" height="6" fill="currentColor"/>
-        <rect x="1.5" y="13" width="13" height="1.5" rx="0.5" fill="currentColor"/>
-      </svg>
+      {paymentType.startsWith('BAKAI') ? (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.2" stroke="#1F6FC4" strokeWidth="2.2"/>
+          <rect x="5.6" y="5.6" width="4.8" height="4.8" rx="1" fill="#14365F"/>
+        </svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M8 1.5 14 5H2l6-3.5Z" fill="currentColor"/>
+          <rect x="3" y="6.5" width="1.8" height="5.5" fill="currentColor"/>
+          <rect x="7.1" y="6.5" width="1.8" height="5.5" fill="currentColor"/>
+          <rect x="11.2" y="6.5" width="1.8" height="5.5" fill="currentColor"/>
+          <rect x="1.5" y="13" width="13" height="1.5" rx="0.5" fill="currentColor"/>
+        </svg>
+      )}
     </div>
   );
 }
@@ -183,7 +191,7 @@ export function WithdrawFiat() {
           <Select
             label={ru.withdraw.methodLabel}
             layout="method"
-            options={options.methods.map((m) => ({ value: m.paymentType, label: m.name, secondary: `${m.commissionPercent}%`, icon: <MethodIcon/> }))}
+            options={options.methods.map((m) => ({ value: m.paymentType, label: m.name, secondary: `${m.commissionPercent}%`, icon: <MethodIcon paymentType={m.paymentType}/> }))}
             value={paymentType}
             onChange={setPaymentType}
           />
@@ -205,7 +213,7 @@ export function WithdrawFiat() {
         {method && (
           <SummaryCard
             rows={[
-              { key: 'min', label: ru.withdraw.minAmountLabel, value: `${formatAmount(method.minimalAmount, currency)} ${currency}` },
+              { key: 'min', label: ru.withdraw.minAmountLabel, value: `${ru.withdraw.minAmountPrefix} ${formatAmount(method.minimalAmount, currency)} ${currency}` },
               { key: 'limit', label: ru.withdraw.limitLabel, value: `${formatAmount(method.maximumAmount, currency)} ${currency}` },
               { key: 'amount', label: ru.withdraw.enteredAmountLabel, value: `${formatAmount(amount || '0', currency)} ${currency}` },
               { key: 'fee', label: ru.withdraw.feeLabel, value: `${formatAmount(String(fee), currency)} ${currency}` },

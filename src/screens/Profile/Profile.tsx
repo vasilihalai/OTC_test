@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
 import { Button } from '@/components/Button/Button.tsx';
+import { CopyIcon } from '@/components/CopyIcon/CopyIcon.tsx';
 import { SettingRow } from '@/components/SettingRow/SettingRow.tsx';
 import { PickerModal } from '@/components/PickerModal/PickerModal.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
@@ -20,15 +21,6 @@ import { ru } from '@/i18n/ru.ts';
 
 import './Profile.css';
 
-function CopyIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2.5" y="2.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-      <path d="M5.5 13.5H12a1.5 1.5 0 0 0 1.5-1.5V5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
 function VerifiedIcon() {
   return (
     <span className="profile__verified-icon" aria-hidden="true">
@@ -45,13 +37,9 @@ function VerifiedIcon() {
 function GlobeIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" fill="currentColor" fillOpacity="0.16"/>
-      <path
-        d="M3.5 12h17M12 3.5c2.5 2.3 3.8 5.3 3.8 8.5s-1.3 6.2-3.8 8.5c-2.5-2.3-3.8-5.3-3.8-8.5S9.5 5.8 12 3.5z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.4"/>
+      <ellipse cx="12" cy="12" rx="4" ry="9" stroke="currentColor" strokeWidth="1.4"/>
+      <path d="M3 12h18M4.3 7.5h15.4M4.3 16.5h15.4" stroke="currentColor" strokeWidth="1.4"/>
     </svg>
   );
 }
@@ -59,9 +47,12 @@ function GlobeIcon() {
 function ThemeIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
       <path
-        d="M12 3.5a8.5 8.5 0 1 0 8.2 10.7c.15-.55-.45-.98-.94-.7a6 6 0 0 1-7.76-8.66c.34-.46.03-1.13-.54-1.3A8.5 8.5 0 0 0 12 3.5Z"
-        fill="currentColor"
+        d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
       />
     </svg>
   );
@@ -70,9 +61,13 @@ function ThemeIcon() {
 function FaqIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M9.6 9.3a2.4 2.4 0 1 1 3.4 2.2c-.8.4-1 .8-1 1.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      <circle cx="12" cy="16.3" r="0.9" fill="currentColor"/>
+      <path
+        d="M12 3a8.5 8.5 0 0 1 2.3 16.7c-.3.1-.5.2-.7.5l-1 1.3c-.3.4-.9.4-1.2 0l-1-1.3c-.2-.3-.4-.4-.7-.5A8.5 8.5 0 0 1 12 3Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path d="M9.7 9.3a2.4 2.4 0 1 1 3.4 2.2c-.8.4-1.1.8-1.1 1.600" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <circle cx="12" cy="15.8" r="0.9" fill="currentColor"/>
     </svg>
   );
 }
@@ -80,9 +75,9 @@ function FaqIcon() {
 function AboutIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M12 11v5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-      <circle cx="12" cy="7.8" r="1" fill="currentColor"/>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.4"/>
+      <path d="M12 7.5v5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <circle cx="12" cy="16" r="0.9" fill="currentColor"/>
     </svg>
   );
 }
@@ -96,9 +91,9 @@ function LogoutIcon() {
 }
 
 const LANGUAGE_OPTIONS = [
+  { value: 'ky' as const, label: ru.profile.languageKy },
   { value: 'ru' as const, label: ru.profile.languageRu },
   { value: 'en' as const, label: ru.profile.languageEn },
-  { value: 'ky' as const, label: ru.profile.languageKy },
 ];
 
 const THEME_OPTIONS = [

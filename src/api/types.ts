@@ -141,6 +141,7 @@ export interface SavedRequisite {
   account: string;
   bankName?: string;
   bic?: string;
+  kpp?: string;
   inn?: string;
   correspondentAccount?: string;
 }
@@ -150,6 +151,7 @@ export interface RequisitesPayload {
   account: string;
   bankName?: string;
   bic?: string;
+  kpp?: string;
   inn?: string;
   correspondentAccount?: string;
   saveForLater: boolean;

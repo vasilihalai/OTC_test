@@ -24,11 +24,9 @@ export interface ModalProps extends PropsWithChildren {
   footer?: ReactNode;
   /** Card width in px — defaults to 400 (capped by `max-width: calc(100% - 32px)`). Per-instance so narrowing one modal doesn't narrow every modal. */
   width?: number;
-  /** Smaller close glyph with equal top/right insets — used by the OTP/2FA modals. */
-  compactClose?: boolean;
 }
 
-export function Modal({ open, title, onClose, footer, children, width = 400, compactClose }: ModalProps) {
+export function Modal({ open, title, onClose, footer, children, width = 400 }: ModalProps) {
   const rendered = useDelayedUnmount(open, EXIT_DURATION_MS);
   if (!rendered) {
     return null;
@@ -39,7 +37,7 @@ export function Modal({ open, title, onClose, footer, children, width = 400, com
       <div className={e('card', { closing: !open })} style={{ width }} onClick={(ev) => ev.stopPropagation()}>
         <div className={e('top')}>
           <span className={e('title')}>{title}</span>
-          <button type="button" className={e('close', { compact: compactClose })} aria-label="Close" onClick={onClose}>
+          <button type="button" className={e('close')} aria-label="Close" onClick={onClose}>
             <CloseIcon/>
           </button>
         </div>

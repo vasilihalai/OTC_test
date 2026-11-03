@@ -8,34 +8,29 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   padding: 8px 16px 16px;
 }
 
-.withdraw-crypto__title {
-  font-size: 20px;
-  line-height: 26px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
+.withdraw-crypto__scroll .summary-card {
+  margin-top: 8px;
 }
 
 .withdraw-crypto__section-title {
-  font-size: 18px;
-  line-height: 24px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+  color: var(--text-body);
   margin: 8px 0 0;
 }
 
 .withdraw-crypto__address-label {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-top: 4px;
-  margin-bottom: -6px;
-  font-size: 13px;
-  line-height: 18px;
+  gap: 6px;
+  margin-bottom: -10px;
+  font-size: 14px;
+  line-height: 20px;
   color: var(--text-muted);
 }
 
@@ -63,22 +58,13 @@
   background: linear-gradient(to top, var(--bg-page) 65%, transparent);
 }
 
-.withdraw-crypto__success-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 8px;
-}
-
-.withdraw-crypto__success-body {
-  font-size: 14px;
-  color: var(--text-muted);
-  margin: 0 0 16px;
-}
-
 .withdraw-crypto__note {
   font-size: 14px;
   line-height: 20px;
   color: var(--text-muted);
   margin: 0;
+}
+
+.withdraw-crypto__section-title:first-child {
+  margin-top: 0;
 }

@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-import { Panel } from '@/components/Panel/Panel.tsx';
 import { Select } from '@/components/Select/Select.tsx';
 import { TextField } from '@/components/TextField/TextField.tsx';
 import { Checkbox } from '@/components/Checkbox/Checkbox.tsx';
@@ -23,6 +22,7 @@ import { useUiStore } from '@/store/ui.ts';
 import { formatAmount } from '@/lib/money.ts';
 import { RateLimitedError } from '@/lib/rateLimitedError.ts';
 import { notifyError } from '@/telegram/adapter.ts';
+import { showWithdrawalAccepted } from '@/lib/withdrawalToast.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './WithdrawRequisites.css';
@@ -47,7 +47,7 @@ export function WithdrawRequisites() {
   const [choice, setChoice] = useState<string>(NEW_OPTION);
   const [account, setAccount] = useState('');
   const [bic, setBic] = useState('');
-  const [recipientBic, setRecipientBic] = useState('');
+  const [kpp, setKpp] = useState('');
   const [bankName, setBankName] = useState('');
   const [inn, setInn] = useState('');
   const [corrAccount, setCorrAccount] = useState('');
@@ -55,7 +55,7 @@ export function WithdrawRequisites() {
   const [options, setOptions] = useState<FiatWithdrawOptions>();
   const [accountError, setAccountError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const withdrawalId = useRef<string>();
   const [otpOpen, setOtpOpen] = useState(false);
   const [otpSource, setOtpSource] = useState<WithdrawOtpSource>('email');
   const [quote, setQuote] = useState<WithdrawQuote>();
@@ -104,7 +104,7 @@ export function WithdrawRequisites() {
       setInn(selected.inn ?? '');
       setCorrAccount(selected.correspondentAccount ?? '');
       setBic(selected.bic ?? '');
-      setRecipientBic(selected.bic ?? '');
+      setKpp(selected.kpp ?? '');
       setSaveForLater(false);
     } else {
       setAccount('');
@@ -112,7 +112,7 @@ export function WithdrawRequisites() {
       setInn('');
       setCorrAccount('');
       setBic('');
-      setRecipientBic('');
+      setKpp('');
     }
     setAccountError(undefined);
   }, [choice, selected]);
@@ -132,7 +132,8 @@ export function WithdrawRequisites() {
       transferType,
       account,
       bankName: transferType !== 'internal' ? bankName : undefined,
-      bic: transferType === 'ru' ? recipientBic : (transferType === 'kg' ? bic : undefined),
+      bic: transferType !== 'internal' ? bic : undefined,
+      kpp: transferType === 'ru' ? kpp : undefined,
       inn: transferType !== 'internal' ? inn : undefined,
       correspondentAccount: transferType === 'ru' ? corrAccount : undefined,
       saveForLater: isNew && saveForLater,
@@ -174,7 +175,7 @@ export function WithdrawRequisites() {
       throw new Error(ru.withdraw.errorGeneric);
     }
     try {
-      await confirmWithdrawOtp(quote.transactionId, code, requisitesPayload);
+      withdrawalId.current = (await confirmWithdrawOtp(quote.transactionId, code, requisitesPayload)).id;
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.httpStatus === 429) {
@@ -197,19 +198,8 @@ export function WithdrawRequisites() {
   function handleOtpVerified() {
     setOtpOpen(false);
     bumpBalancesVersion();
-    setSuccess(true);
-  }
-
-  if (success) {
-    return (
-      <div className="withdraw-requisites">
-        <Panel>
-          <h1 className="withdraw-requisites__success-title">{ru.withdraw.successTitle}</h1>
-          <p className="withdraw-requisites__success-body">{ru.withdraw.successBody}</p>
-          <Button variant="accent" onClick={() => navigate('/home', { replace: true })}>{ru.withdraw.doneAction}</Button>
-        </Panel>
-      </div>
-    );
+    showWithdrawalAccepted(withdrawalId.current);
+    navigate('/home', { replace: true });
   }
 
   return (
@@ -223,33 +213,31 @@ export function WithdrawRequisites() {
           layout="plain"
           options={[
             ...compatibleSaved.map((r) => ({ value: r.id, label: r.label })),
-            { value: NEW_OPTION, label: ru.withdraw.newRequisiteOption },
+            { value: NEW_OPTION, label: ru.withdraw.newRequisiteOption, placeholder: true },
           ]}
           value={choice}
           onChange={setChoice}
         />
       )}
 
+      {transferType !== 'internal' && (
+        <TextField label={ru.withdraw.innLabel} hint={ru.withdraw.innHint} placeholder={ru.withdraw.innPlaceholder} value={inn} disabled={!isNew} onChange={(e) => setInn(e.target.value)}/>
+      )}
       {transferType === 'ru' && (
-        <TextField label={ru.withdraw.recipientBicLabel} placeholder={ru.withdraw.bicPlaceholder} value={recipientBic} disabled={!isNew} onChange={(e) => setRecipientBic(e.target.value)}/>
+        <TextField label={ru.withdraw.kppLabel} hint={ru.withdraw.kppHint} placeholder={ru.withdraw.kppPlaceholder} value={kpp} disabled={!isNew} onChange={(e) => setKpp(e.target.value)}/>
       )}
       {transferType !== 'internal' && (
-        <TextField label={ru.withdraw.innLabel} placeholder={ru.withdraw.innPlaceholder} value={inn} disabled={!isNew} onChange={(e) => setInn(e.target.value)}/>
+        <TextField label={ru.withdraw.bankNameLabel} hint={ru.withdraw.bankNameHint} placeholder={ru.withdraw.bankNamePlaceholder} value={bankName} disabled={!isNew} onChange={(e) => setBankName(e.target.value)}/>
       )}
       {transferType !== 'internal' && (
-        <TextField label={ru.withdraw.bankNameLabel} placeholder={ru.withdraw.bankNamePlaceholder} value={bankName} disabled={!isNew} onChange={(e) => setBankName(e.target.value)}/>
-      )}
-      {transferType === 'kg' && (
-        <TextField label={ru.withdraw.bicLabel} placeholder={ru.withdraw.bicPlaceholder} value={bic} disabled={!isNew} onChange={(e) => setBic(e.target.value)}/>
+        <TextField label={ru.withdraw.bicLabel} hint={ru.withdraw.bicHint} placeholder={ru.withdraw.bicPlaceholder} value={bic} disabled={!isNew} onChange={(e) => setBic(e.target.value)}/>
       )}
       {transferType === 'ru' && (
-        <TextField label={ru.withdraw.bankBicLabel} placeholder={ru.withdraw.bicPlaceholder} value={bic} disabled={!isNew} onChange={(e) => setBic(e.target.value)}/>
-      )}
-      {transferType === 'ru' && (
-        <TextField label={ru.withdraw.correspondentAccountLabel} placeholder={ru.withdraw.correspondentAccountPlaceholder} value={corrAccount} disabled={!isNew} onChange={(e) => setCorrAccount(e.target.value)}/>
+        <TextField label={ru.withdraw.correspondentAccountLabel} hint={ru.withdraw.correspondentAccountHint} placeholder={ru.withdraw.correspondentAccountPlaceholder} value={corrAccount} disabled={!isNew} onChange={(e) => setCorrAccount(e.target.value)}/>
       )}
       <TextField
         label={ru.withdraw.recipientAccountLabel}
+        hint={ru.withdraw.recipientAccountHint}
         placeholder={ru.withdraw.recipientAccountPlaceholder}
         value={account}
         error={accountError}
@@ -264,7 +252,7 @@ export function WithdrawRequisites() {
       {method && (
         <SummaryCard
           rows={[
-            { key: 'min', label: ru.withdraw.minAmountLabel, value: `${formatAmount(method.minimalAmount, ticker)} ${ticker}` },
+            { key: 'min', label: ru.withdraw.minAmountLabel, value: `${ru.withdraw.minAmountPrefix} ${formatAmount(method.minimalAmount, ticker)} ${ticker}` },
             { key: 'limit', label: ru.withdraw.limitLabel, value: `${formatAmount(method.maximumAmount, ticker)} ${ticker}` },
             { key: 'amount', label: ru.withdraw.enteredAmountLabel, value: `${formatAmount(amount, ticker)} ${ticker}` },
             { key: 'fee', label: ru.withdraw.feeLabel, value: `${formatAmount(String(fee), ticker)} ${ticker}` },

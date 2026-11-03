@@ -1,5 +1,5 @@
 .requisites-panel__heading {
-  margin: 0 0 8px;
+  margin: 0 0 16px;
   font-size: 16px;
   line-height: 24px;
   font-weight: 600;
@@ -68,7 +68,7 @@
   font-size: 12px;
   line-height: 16px;
   color: var(--text-quiet);
-  margin: 4px 0;
+  margin: 16px 0 8px;
 }
 
 .requisites-panel__qr-caption--divider {
@@ -91,8 +91,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 176px;
-  height: 176px;
+  width: 148px;
+  height: 148px;
   margin: 0 auto;
   padding: 8px;
   background: #FFFFFF;
@@ -109,13 +109,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border: 3px solid #FFFFFF;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid #FFFFFF;
   background: var(--brand-mark);
-  color: #FFFFFF;
-  font-size: 18px;
+  color: #0C0E12;
+  font-size: 16px;
   font-weight: 800;
 }
 
@@ -127,17 +127,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: var(--bg-surface);
 }
 
 .requisites-panel__address-text {
   flex: 1;
   min-width: 0;
   font-size: 14px;
+  line-height: 20px;
   font-weight: 600;
   color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A single asset: filled, not a field to change. */
+.requisites-panel__select .select__box--readonly {
+  background: var(--bg-elevated);
+  border-color: transparent;
 }

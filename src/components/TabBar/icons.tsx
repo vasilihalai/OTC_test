@@ -12,10 +12,12 @@ export function HomeIcon() {
 export function DealsIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <rect x="4" y="3" width="16" height="18" rx="2.5" fill="currentColor"/>
-      <rect x="7" y="7.2" width="10" height="2" rx="1" fill="var(--bg-page)"/>
-      <rect x="7" y="11.2" width="10" height="2" rx="1" fill="var(--bg-page)"/>
-      <rect x="7" y="15.2" width="6" height="2" rx="1" fill="var(--bg-page)"/>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Zm1.8 3.9a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Zm4 .4a.9.9 0 0 0 0 1.8h5.2a.9.9 0 0 0 0-1.8h-5.2Zm-4 3.4a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Zm4 .4a.9.9 0 0 0 0 1.8h5.2a.9.9 0 0 0 0-1.8h-5.2Zm-4 3.4a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Zm4 .4a.9.9 0 0 0 0 1.8h5.2a.9.9 0 0 0 0-1.8h-5.2Z"
+        fill="currentColor"
+      />
     </svg>
   );
 }
@@ -25,7 +27,7 @@ export function ProfileIcon() {
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
       <circle cx="12" cy="7.5" r="4" fill="currentColor"/>
       <path
-        d="M4.5 20.3c1.3-4.4 4.3-6.8 7.5-6.8s6.2 2.4 7.5 6.8a1 1 0 0 1-.96 1.3H5.46a1 1 0 0 1-.96-1.3Z"
+        d="M12 13.3c-4.700 0-8.5 2.2-8.5 5 0 1 .8 1.9 1.9 1.9h13.2c1.100 0 1.9-.9 1.9-1.9 0-2.8-3.8-5-8.5-5Z"
         fill="currentColor"
       />
     </svg>

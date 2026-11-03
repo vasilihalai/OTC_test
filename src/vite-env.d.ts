@@ -10,6 +10,7 @@ interface ImportMetaEnv {
   readonly VITE_AUTH_MERCHANT_ID?: string;
   readonly VITE_TELEGRAM_MINI_APP_CLIENT_ID?: string;
   readonly VITE_APP_VERSION?: string;
+  readonly VITE_SUPPORT_URL?: string;
   readonly VITE_USE_REAL_API?: string;
   readonly VITE_FORCE_INAPP_HEADER?: string;
 }

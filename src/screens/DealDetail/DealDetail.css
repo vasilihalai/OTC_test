@@ -96,6 +96,7 @@
 }
 
 .quote-card__timer {
+  font-variant-numeric: tabular-nums;
   color: var(--accent);
   font-weight: 600;
 }

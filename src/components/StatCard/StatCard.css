@@ -8,7 +8,7 @@
 .stat-card__value {
   font-size: 24px;
   line-height: 32px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-body);
 }
 
@@ -20,7 +20,7 @@
 }
 
 .stat-card__label {
-  margin-top: 4px;
+  margin-top: 8px;
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;

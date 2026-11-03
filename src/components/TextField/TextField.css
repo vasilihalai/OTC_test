@@ -4,10 +4,16 @@
   gap: 6px;
 }
 
+.text-field__label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .text-field__label {
   font-size: 14px;
   line-height: 20px;
-  color: var(--text-body);
+  color: var(--text-muted);
 }
 
 .text-field__input {

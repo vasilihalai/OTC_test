@@ -4,22 +4,26 @@ import './EmptyState.css';
 
 const [b, e] = bem('empty-state');
 
-function TrayIcon() {
+/** The silver folder of the "Нет данных" frame. */
+function FolderIcon() {
   return (
-    <svg width="70" height="60" viewBox="0 0 70 60" fill="none" aria-hidden="true">
-      <path
-        d="M8 34l7.5-22a4 4 0 0 1 3.8-2.7h31.4a4 4 0 0 1 3.8 2.7L62 34"
-        stroke="var(--border-strong)"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M8 34h15.2a2 2 0 0 1 1.9 1.4L27 40h16l1.9-4.6a2 2 0 0 1 1.9-1.4H62v14a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4V34Z"
-        fill="var(--bg-raised)"
-        stroke="var(--border-strong)"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
+    <svg width="52" height="46" viewBox="0 0 52 46" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="empty-state-back" x1="26" y1="1" x2="26" y2="20" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#F4F5F6"/>
+          <stop offset="1" stopColor="#9EA1A7"/>
+        </linearGradient>
+        <linearGradient id="empty-state-front" x1="26" y1="9" x2="26" y2="45" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#E6E7E9"/>
+          <stop offset="0.45" stopColor="#A4A7AC"/>
+          <stop offset="0.8" stopColor="#6E7176"/>
+          <stop offset="1" stopColor="#9A9DA3"/>
+        </linearGradient>
+      </defs>
+      <path d="M1 5a4 4 0 0 1 4-4h11.3a4 4 0 0 1 2.9 1.2l2.6 2.6A4 4 0 0 0 24.7 6H47a4 4 0 0 1 4 4v8H1V5z" fill="url(#empty-state-back)"/>
+      <rect x="1" y="9" width="50" height="36" rx="4" fill="url(#empty-state-front)"/>
+      <rect x="1.5" y="9.5" width="49" height="35" rx="3.5" stroke="#FFFFFF" strokeOpacity="0.6"/>
+      <path d="M4 43.8h44" stroke="#A9C7E8" strokeWidth="1.4" strokeLinecap="round"/>
     </svg>
   );
 }
@@ -31,7 +35,7 @@ export interface EmptyStateProps {
 export function EmptyState({ caption }: EmptyStateProps) {
   return (
     <div className={b()}>
-      <TrayIcon/>
+      <FolderIcon/>
       <p className={e('caption')}>{caption}</p>
     </div>
   );

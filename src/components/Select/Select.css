@@ -5,9 +5,9 @@
 }
 
 .select__label {
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--text-body);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-muted);
 }
 
 .select__wrap {
@@ -18,9 +18,9 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   min-height: 44px;
-  padding: 8px 12px;
+  padding: 8px 16px 8px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: transparent;
@@ -45,8 +45,8 @@
   z-index: 20;
   max-height: 240px;
   overflow-y: auto;
+  padding: 4px 0;
   border-radius: 16px;
-  border: 1px solid var(--border);
   background: var(--bg-surface);
   box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
   transform-origin: top center;
@@ -68,18 +68,23 @@
   padding: 6px 12px;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--border);
   cursor: pointer;
   text-align: left;
-}
-
-.select__option:last-child {
-  border-bottom: none;
 }
 
 .select__option--disabled {
   opacity: .4;
   cursor: not-allowed;
+}
+
+.select__option .select__row-ticker,
+.select__option .select__row-name,
+.select__option .select__row-plain {
+  color: var(--text-muted);
+}
+
+.select__option .fee-badge {
+  display: none;
 }
 
 /* Row layouts — shared between the closed box and dropdown options. */
@@ -95,32 +100,38 @@
 .select__row-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
 .select__row-ticker,
 .select__row-name {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  line-height: 24px;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.select__row--method .select__row-name {
-  font-weight: 400;
-}
-
 .select__row-secondary {
   flex-shrink: 0;
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 24px;
   color: var(--text-muted);
 }
 
 .select__row-plain {
   flex: 1;
-  font-size: 15px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  line-height: 24px;
   color: var(--text-primary);
+}
+
+.select__row-plain--placeholder {
+  color: var(--text-disabled);
 }

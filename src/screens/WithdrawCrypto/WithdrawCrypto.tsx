@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
+import { HintTooltip } from '@/components/HintTooltip/HintTooltip.tsx';
 import { Select } from '@/components/Select/Select.tsx';
 import { TextField } from '@/components/TextField/TextField.tsx';
 import { AmountField } from '@/components/AmountField/AmountField.tsx';
@@ -30,6 +31,7 @@ import { formatAmount } from '@/lib/money.ts';
 import { extractAddressFromQr, isValidCryptoAddress } from '@/lib/cryptoAddress.ts';
 import { RateLimitedError } from '@/lib/rateLimitedError.ts';
 import { notifyError } from '@/telegram/adapter.ts';
+import { showWithdrawalAccepted } from '@/lib/withdrawalToast.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './WithdrawCrypto.css';
@@ -84,7 +86,7 @@ export function WithdrawCrypto() {
   const [quote, setQuote] = useState<WithdrawQuote>();
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const withdrawalId = useRef<string>();
   const [initialLoading, setInitialLoading] = useState(true);
   const [otpOpen, setOtpOpen] = useState(false);
   const [otpSource, setOtpSource] = useState<WithdrawOtpSource>('email');
@@ -267,7 +269,7 @@ export function WithdrawCrypto() {
       throw new Error(ru.withdraw.errorGeneric);
     }
     try {
-      await confirmWithdrawOtp(quote.transactionId, code, { address });
+      withdrawalId.current = (await confirmWithdrawOtp(quote.transactionId, code, { address })).id;
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.httpStatus === 429) {
@@ -290,19 +292,8 @@ export function WithdrawCrypto() {
   function handleOtpVerified() {
     setOtpOpen(false);
     bumpBalancesVersion();
-    setSuccess(true);
-  }
-
-  if (success) {
-    return (
-      <div className="withdraw-crypto">
-        <Panel>
-          <h1 className="withdraw-crypto__success-title">{ru.withdraw.successTitle}</h1>
-          <p className="withdraw-crypto__success-body">{ru.withdraw.successBody}</p>
-          <Button variant="accent" onClick={() => navigate('/home', { replace: true })}>{ru.withdraw.doneAction}</Button>
-        </Panel>
-      </div>
-    );
+    showWithdrawalAccepted(withdrawalId.current);
+    navigate('/home', { replace: true });
   }
 
   if (initialLoading) {
@@ -355,6 +346,7 @@ export function WithdrawCrypto() {
         </h2>
         <div className="withdraw-crypto__address-label">
           <span>{ru.withdraw.addressLabel}</span>
+          <HintTooltip text={ru.withdraw.addressHint} label={ru.withdraw.addressLabel}/>
         </div>
         <div className="withdraw-crypto__address-manual">
           <TextField
@@ -408,7 +400,7 @@ export function WithdrawCrypto() {
         {quote && (
           <SummaryCard
             rows={[
-              { key: 'min', label: ru.withdraw.minAmountLabel, value: `${formatAmount(quote.minimalAmount, ticker)} ${ticker}` },
+              { key: 'min', label: ru.withdraw.minAmountLabel, value: `${ru.withdraw.minAmountPrefix} ${formatAmount(quote.minimalAmount, ticker)} ${ticker}` },
               ...(limit
                 ? [{ key: 'limit', label: ru.withdraw.limitLabel, value: `${formatAmount(limit.availableLimit, limit.currency)} ${limit.currency}` }]
                 : []),

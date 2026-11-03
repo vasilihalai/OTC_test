@@ -10,7 +10,7 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   height: 100%;
   padding-left: 16px;
 }
@@ -21,15 +21,16 @@
 }
 
 .table-row__ticker {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-body);
 }
 
 .table-row__name {
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--text-muted);
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-quiet);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -37,10 +38,11 @@
 
 .table-row__amount-cell {
   flex-shrink: 0;
-  font-size: 15px;
+  font-size: 14px;
+  line-height: 20px;
   color: var(--text-body);
   text-align: right;
-  padding: 0 8px;
+  padding: 0 16px 0 8px;
 }
 
 .table-row__action-cell {
@@ -71,7 +73,7 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--bg-raised);
+  background: var(--bg-elevated);
   color: var(--text-body);
 }
 

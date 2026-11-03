@@ -14,7 +14,9 @@
   padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-viewport-safe-area-inset-bottom, 0px));
   display: flex;
   background: var(--bg-page);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, .25);
+  border: 1px solid var(--bg-elevated);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
   z-index: 100;
   /* A drag starting here has nowhere of its own to scroll — without this
      it could still chain up to the document (see index.css). */
@@ -27,7 +29,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding-top: 10px;
+  padding-top: 7px;
   gap: 2px;
   background: none;
   border: none;
@@ -47,4 +49,5 @@
 .tab-bar__label {
   font-size: 12px;
   line-height: 16px;
+  font-weight: 500;
 }
