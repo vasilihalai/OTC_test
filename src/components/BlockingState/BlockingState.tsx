@@ -25,7 +25,7 @@ export interface BlockingStateProps {
   logo: ReactNode;
   title: string;
   body: string;
-  action: ReactNode;
+  action?: ReactNode;
   caption?: string;
 }
 
@@ -37,7 +37,7 @@ export function BlockingState({ logo, title, body, action, caption }: BlockingSt
         <ShieldIcon/>
         <h1 className={e('title')}>{title}</h1>
         <p className={e('body')}>{body}</p>
-        <div className={e('action')}>{action}</div>
+        {action && <div className={e('action')}>{action}</div>}
         {caption && <p className={e('caption')}>{caption}</p>}
       </div>
     </div>

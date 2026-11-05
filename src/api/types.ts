@@ -38,7 +38,6 @@ export interface User {
   email: string;
   phone: string;
   userId: string;
-  webCabinetUrl: string;
   supportUrl: string;
   faqUrl: string;
   aboutUrl: string;

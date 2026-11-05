@@ -135,9 +135,8 @@ async function loadUser(): Promise<User> {
     // Not present anywhere in api-integration.md's field mapping (§3) — the
     // profile endpoint doesn't carry them, and nothing in the doc says where
     // else they'd come from. Left empty rather than guessed; Profile's
-    // certificate/support/FAQ/about links and OtcUnavailable's actions will
-    // silently no-op until these have real values. Flag with the backend.
-    webCabinetUrl: '',
+    // certificate/support/FAQ/about links will silently no-op until these
+    // have real values. Flag with the backend.
     supportUrl: '',
     faqUrl: '',
     aboutUrl: '',

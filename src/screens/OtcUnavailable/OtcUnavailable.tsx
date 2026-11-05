@@ -8,7 +8,6 @@ import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import { getUser } from '@/api/index.ts';
 import type { OtcAccessReason, User } from '@/api/index.ts';
 import { useSessionStore } from '@/store/session.ts';
-import { openExternalLink } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 export function OtcUnavailable() {
@@ -16,7 +15,7 @@ export function OtcUnavailable() {
   const session = useSessionStore((s) => s.session);
   // The gate that redirected here already knows the reason — carrying it via
   // location.state avoids losing a `?otc=` dev override once the URL has
-  // changed to this screen. Still fetches the user for the action's URLs.
+  // changed to this screen. The user's own reason is the fallback.
   const locationReason = (useLocation().state as { otcAccess?: OtcAccessReason } | null)?.otcAccess;
   const [user, setUser] = useState<User>();
   const [failed, setFailed] = useState(false);
@@ -61,15 +60,6 @@ export function OtcUnavailable() {
       logo={<span style={{ color: 'var(--brand-mark)', fontWeight: 700, fontSize: 20 }}>xRuby</span>}
       title={isVerification ? ru.otcUnavailable.verificationTitle : ru.otcUnavailable.notEligibleTitle}
       body={isVerification ? ru.otcUnavailable.verificationBody : ru.otcUnavailable.notEligibleBody}
-      caption={isVerification ? ru.otcUnavailable.verificationCaption : undefined}
-      action={(
-        <Button
-          variant="accent"
-          onClick={() => openExternalLink(isVerification ? user.webCabinetUrl : user.supportUrl)}
-        >
-          {isVerification ? ru.otcUnavailable.verificationAction : ru.otcUnavailable.notEligibleAction}
-        </Button>
-      )}
     />
   );
 }

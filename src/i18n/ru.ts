@@ -277,11 +277,8 @@ export const ru = {
   otcUnavailable: {
     verificationTitle: 'ОТС доступен после верификации',
     verificationBody: 'Пройдите верификацию, чтобы ОТС-сделки стали доступными.',
-    verificationAction: 'Пройти верификацию',
-    verificationCaption: 'Откроется браузер — доступ к камере внутри мини-приложения не гарантирован.',
     notEligibleTitle: 'ОТС недоступен для вашего аккаунта',
     notEligibleBody: 'Свяжитесь с менеджером, чтобы подключить ОТС-сделки.',
-    notEligibleAction: 'Написать в поддержку',
     deskClosedTitle: 'Стол ОТС сейчас закрыт',
     deskClosedBody: 'Пн–Пт 10:00–18:00 по UTC+3. Вне часов заявка обрабатывается в рабочее время.',
     deskClosedAction: 'На главный экран',
