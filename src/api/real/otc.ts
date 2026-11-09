@@ -261,11 +261,17 @@ export async function getDealById(operationId: string): Promise<Deal | undefined
   }
 }
 
-interface RawCryptoRequisites {
-  currency: string;
+interface RawCryptoNetwork {
+  currency?: string;
   network?: string | null;
   networkLabel?: string | null;
   address: string;
+}
+
+interface RawCryptoRequisites extends RawCryptoNetwork {
+  currency: string;
+  /** Every network of the asset, when it has several; each item may leave out `currency`. */
+  networks?: RawCryptoNetwork[] | null;
 }
 
 interface RawRequisites {
@@ -273,7 +279,10 @@ interface RawRequisites {
   title?: string | null;
   paymentPurpose?: string | null;
   bank?: Record<string, string | null> | null;
-  /** One network today; a list once the backend sends every network of the asset (asked for). */
+  /**
+   * One object for an asset with a single network. For an asset with several the backend sends every
+   * network with its address; read either as a list here or as `networks` inside the object.
+   */
   crypto?: RawCryptoRequisites | RawCryptoRequisites[] | null;
 }
 
@@ -293,15 +302,19 @@ const BANK_FIELDS = [
 export async function getDealRequisites(operationId: string): Promise<Requisites> {
   const raw = (await apiFetch<{ result: RawRequisites }>(`/v1/otc/deals/${operationId}/requisites`, {}, false, 'financial')).result;
   if (raw.kind === 'CRYPTO') {
-    const list = (Array.isArray(raw.crypto) ? raw.crypto : raw.crypto ? [raw.crypto] : []).filter((item) => item.address);
-    if (list.length === 0) {
+    const items = Array.isArray(raw.crypto) ? raw.crypto : raw.crypto ? [raw.crypto] : [];
+    const asset = items[0]?.currency;
+    const list = items
+      .flatMap((item): RawCryptoNetwork[] => (item.networks?.length ? item.networks : [item]))
+      .filter((item) => item.address);
+    if (!asset || list.length === 0) {
       throw new Error('Crypto requisites without an address');
     }
     const networks = list.map((item) => ({ network: item.networkLabel || item.network || '', address: item.address }));
     return {
       kind: 'crypto',
-      asset: list[0].currency,
-      assetName: assetName(list[0].currency),
+      asset,
+      assetName: assetName(asset),
       network: networks[0].network,
       address: networks[0].address,
       networks,
