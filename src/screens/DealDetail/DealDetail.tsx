@@ -683,12 +683,12 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
   );
 }
 
-function CancelLink({ deal, onUpdate, refresh }: BodyProps) {
+function CancelLink({ deal, onUpdate, refresh, disabled = false }: BodyProps & { disabled?: boolean }) {
   const { busy, run } = useDealAction({ onUpdate, refresh });
   const [dialogOpen, setDialogOpen] = useState(false);
   return (
     <>
-      <Button type="button" variant="link" danger loading={!!busy} onClick={() => setDialogOpen(true)}>
+      <Button type="button" variant="link" danger loading={!!busy} disabled={disabled} onClick={() => setDialogOpen(true)}>
         {ru.dealDetail.cancelRequestAction}
       </Button>
       <ConfirmDialog
@@ -727,10 +727,14 @@ function StatusHeroBody(props: BodyProps) {
           icon="hourglass"
           tone="stale"
           title={ru.dealDetail.heroRateStaleTitle}
+          // The cancel link isn't in the frame: without it a client couldn't drop a deal whose quote ran out.
           action={(
-            <Button variant="accent" loading={!!busy} onClick={() => void run('request', () => requestNewRate(deal))}>
-              {ru.dealDetail.requestNewRateAction}
-            </Button>
+            <>
+              <Button variant="accent" loading={!!busy} onClick={() => void run('request', () => requestNewRate(deal))}>
+                {ru.dealDetail.requestNewRateAction}
+              </Button>
+              <CancelLink {...props} disabled={!!busy}/>
+            </>
           )}
         />
       );
