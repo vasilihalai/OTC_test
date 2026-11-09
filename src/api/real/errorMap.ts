@@ -22,6 +22,9 @@ const KNOWN: Record<string, string> = {
   // Set by api/index.ts's signInConfirmOtp, not the backend: its /authenticate errors all come
   // back as the generic ER_SYS0006, which other endpoints use for plain validation failures too.
   TELEGRAM_BIND_FAILED: 'Не удалось привязать Telegram. Закройте и снова откройте приложение, затем войдите ещё раз',
+  // Set by real/withdrawals.ts, not the backend.
+  EXTRA_CHECK_REQUIRED: 'Для этого вывода нужна дополнительная проверка. В мини-приложении она пока недоступна — оформите вывод в веб-кабинете',
+  STILL_PROCESSING: 'Операция ещё обрабатывается. Подождите минуту и введите код ещё раз',
 };
 
 // Test plan §1/§9.8: "показывать на экране ошибки короткий код запроса ...
@@ -30,5 +33,5 @@ const KNOWN: Record<string, string> = {
 // support) can always read it straight off the screen.
 export function mapApiError(err: ApiError): string {
   const message = KNOWN[err.code] ?? 'Что-то пошло не так. Попробуйте позже';
-  return `${message} (${err.requestId.slice(0, 8)})`;
+  return err.requestId ? `${message} (${err.requestId.slice(0, 8)})` : message;
 }

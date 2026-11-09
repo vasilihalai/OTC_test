@@ -18,9 +18,18 @@ export function decimalString(value: number): string {
 
 const SCALE = 18;
 
-/** Fixed-point units, so a shortfall of exactly 1% is never lost to float rounding. */
-function units(value: string): bigint {
-  const [whole, fraction = ''] = value.trim().replace(/^\+/, '').split('.');
+/**
+ * Fixed-point units, so a shortfall of exactly 1% is never lost to float rounding. Anything that isn't a
+ * plain non-negative decimal (a JSON number in exponent form, a negative, garbage) is read as a number
+ * and floored at zero rather than thrown on: this runs while rendering the hold screen.
+ */
+function units(value: string | number): bigint {
+  const match = /^(\d*)(?:\.(\d*))?$/.exec(String(value).trim());
+  if (!match || (!match[1] && !match[2])) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? units(numeric.toFixed(8)) : 0n;
+  }
+  const [, whole, fraction = ''] = match;
   return BigInt((whole || '0') + fraction.padEnd(SCALE, '0').slice(0, SCALE));
 }
 

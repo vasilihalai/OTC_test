@@ -54,18 +54,28 @@ function hasBrowserTabs(): boolean {
 }
 
 /**
- * Shows a PDF that needs the session token to download, so it can't be handed
- * to the external browser as a link. The tab is opened before the download: a
- * popup opened after an await is blocked. Must be called from the tap handler.
+ * Opens something that has to be fetched first: a link, or a PDF that needs the session token and so
+ * can't be handed to the external browser as a link. Where the app runs in a browser, a popup opened
+ * after an await is blocked, so the tab is opened before the fetch and pointed at the result after.
+ * Native Telegram clients open a link through the bridge, but have nowhere to show a fetched file.
+ * Must be called from the tap handler.
  */
-export async function openFetchedPdf(load: () => Promise<Blob>): Promise<void> {
+export async function openWhenReady(load: () => Promise<string | Blob>): Promise<void> {
   const tab = hasBrowserTabs() ? window.open('', '_blank') : null;
   try {
-    const blob = await load();
-    if (await blob.slice(0, 4).text() !== '%PDF') {
-      throw new Error(`Expected a PDF, got ${blob.type || 'an untyped response'}`);
+    const loaded = await load();
+    if (typeof loaded === 'string') {
+      if (tab) {
+        tab.location.href = loaded;
+      } else {
+        openExternalLink(loaded);
+      }
+      return;
     }
-    const url = URL.createObjectURL(blob.slice(0, blob.size, 'application/pdf'));
+    if (await loaded.slice(0, 4).text() !== '%PDF') {
+      throw new Error(`Expected a PDF, got ${loaded.type || 'an untyped response'}`);
+    }
+    const url = URL.createObjectURL(loaded.slice(0, loaded.size, 'application/pdf'));
     if (tab) {
       tab.location.href = url;
     } else if (!window.open(url, '_blank')) {

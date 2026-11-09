@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
@@ -95,8 +95,14 @@ interface BodyProps {
 /** One action at a time per card; the button that started it shows the spinner. */
 function useDealAction({ onUpdate, refresh }: Pick<BodyProps, 'onUpdate' | 'refresh'>) {
   const [busy, setBusy] = useState<string>();
+  // The state lands a render later: a double tap would get through it and send the command twice (Н-24).
+  const running = useRef(false);
 
   async function run(name: string, action: () => Promise<Deal | undefined>) {
+    if (running.current) {
+      return;
+    }
+    running.current = true;
     setBusy(name);
     try {
       const updated = await action();
@@ -107,6 +113,7 @@ function useDealAction({ onUpdate, refresh }: Pick<BodyProps, 'onUpdate' | 'refr
       showDealError(err, ru.common.errorGeneric);
       refresh();
     } finally {
+      running.current = false;
       setBusy(undefined);
     }
   }
@@ -170,6 +177,16 @@ export function DealDetail() {
   const [notFound, setNotFound] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // A slow poll must not overwrite what a later action already showed: every read is numbered when
+  // it starts, and only one newer than the last shown is applied.
+  const started = useRef(0);
+  const shown = useRef(0);
+
+  const showDeal = useCallback((data: Deal) => {
+    started.current += 1;
+    shown.current = started.current;
+    setDeal(data);
+  }, []);
 
   useEffect(() => {
     if (!id) {
@@ -180,7 +197,7 @@ export function DealDetail() {
     setFailed(false);
     void getDealById(id).then((data) => {
       if (data) {
-        setDeal(data);
+        showDeal(data);
       } else {
         setNotFound(true);
       }
@@ -188,13 +205,21 @@ export function DealDetail() {
       console.error('[DealDetail] deal load failed', err);
       setFailed(true);
     }).finally(() => setLoading(false));
-  }, [id, attempt]);
+  }, [id, attempt, showDeal]);
 
   // A failed re-read is simply retried by the next one.
   const refresh = useCallback(() => {
-    if (id) {
-      void getDealById(id).then((data) => data && setDeal(data)).catch(() => undefined);
+    if (!id) {
+      return;
     }
+    started.current += 1;
+    const mine = started.current;
+    void getDealById(id).then((data) => {
+      if (data && mine > shown.current) {
+        shown.current = mine;
+        setDeal(data);
+      }
+    }).catch(() => undefined);
   }, [id]);
 
   usePolling(refresh, POLL_MS, USE_REAL_API && !!deal && !isTerminalDealStatus(deal.status));
@@ -217,7 +242,7 @@ export function DealDetail() {
 
   const meta = deal && DEAL_STATUS_META[deal.status];
   const detailRows = deal && getDetailRows(deal.status);
-  const bodyProps = deal && { deal, onUpdate: setDeal, refresh };
+  const bodyProps = deal && { deal, onUpdate: showDeal, refresh };
   const amounts = deal && settledAmounts(deal);
 
   return (
@@ -510,9 +535,16 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
   const minAmount = deal.minAmount ?? '0';
   // The card's balance is the server's own figure; the deposit balance is only a fallback for a card without one.
   const cardBalance = USE_REAL_API ? deal.balance : undefined;
+  const balance = cardBalance ?? accountBalance;
+  const branch = balance === undefined ? undefined : holdBranch(balance, amount, minAmount);
+  const showRequisites = branch === 'short' || branch === 'belowmin';
 
-  // Read once per screen (the method isn't meant for polling); a failure offers a retry in the panel's place.
+  // Read once, and only when the panel is shown (the method isn't meant for polling); a failure offers a
+  // retry in the panel's place.
   useEffect(() => {
+    if (!showRequisites || requisites) {
+      return;
+    }
     setRequisitesFailed(false);
     void getDealRequisites(deal.id).then((data) => {
       if (data) {
@@ -524,7 +556,19 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
       console.error('[DealDetail] requisites load failed', err);
       setRequisitesFailed(true);
     });
-  }, [deal.id, requisitesAttempt]);
+  }, [deal.id, showRequisites, requisites, requisitesAttempt]);
+
+  // A transfer between the client's accounts changes the card's balance: re-read it at once, and once
+  // more a few seconds later in case the balance landed after the transfer's own answer.
+  const balancesVersionAtOpen = useRef(balancesVersion);
+  useEffect(() => {
+    if (!USE_REAL_API || balancesVersion === balancesVersionAtOpen.current) {
+      return;
+    }
+    refresh();
+    const again = setTimeout(refresh, 3000);
+    return () => clearTimeout(again);
+  }, [balancesVersion, refresh]);
 
   // Explicit dev override only — forces the mock deposit balance to whatever produces the requested case.
   useEffect(() => {
@@ -548,14 +592,12 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
       });
   }, [cardBalance, deal.ticker, scenario, balancesVersion, balanceAttempt]);
 
-  const balance = cardBalance ?? accountBalance;
-  if (balance === undefined) {
+  if (balance === undefined || branch === undefined) {
     return balanceFailed
       ? <LoadError message={ru.home.balancesError} onRetry={() => setBalanceAttempt((n) => n + 1)}/>
       : <Skeleton height={90} radius={14}/>;
   }
 
-  const branch = holdBranch(balance, amount, minAmount);
   const shortfall = deal.missingAmount && Number(deal.missingAmount) > 0 ? deal.missingAmount : shortfallOf(balance, amount);
   const balanceLabel = `${formatAmount(balance, deal.ticker)} ${deal.ticker}`;
   const minLabel = `${formatAmount(minAmount, deal.ticker)} ${deal.ticker}`;
@@ -617,7 +659,7 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
         {ru.dealDetail.declineAction}
       </Button>
 
-      {(branch === 'short' || branch === 'belowmin') && (
+      {showRequisites && (
         requisites ? <RequisitesPanel requisites={requisites}/>
           : requisitesFailed ? (
             <Panel fill="surface" radius="16px">

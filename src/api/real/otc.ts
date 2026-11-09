@@ -18,7 +18,7 @@ import { formatDealDate } from '@/lib/date.ts';
 import { msUntil } from '@/lib/countdown.ts';
 import { formatAmount, formatAmountInput } from '@/lib/money.ts';
 import { type OtcRealStatus, mapOtcStatus } from '@/lib/otcStatus.ts';
-import { openExternalLink, openFetchedPdf } from '@/telegram/adapter.ts';
+import { openExternalLink, openWhenReady } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -26,27 +26,34 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 interface DashboardCounter {
   value: number;
   calculatedAt: string;
+  /** Only on `turnover30Days`: the user's display currency. */
+  currency?: string;
+}
+
+/** `100240000` → `100.24M`, as the Home frame draws the turnover; below a million the number stays whole. */
+function compactAmount(value: number): string {
+  for (const [threshold, suffix] of [[1e9, 'B'], [1e6, 'M']] as const) {
+    if (Math.abs(value) >= threshold) {
+      return `${(value / threshold).toFixed(2).replace(/\.?0+$/, '')}${suffix}`;
+    }
+  }
+  return formatAmountInput(String(Math.round(value)));
 }
 
 /**
- * §7.2 — feeds Home's two stat cards. Three counters exist server-side
- * (`activeRequests`, `turnover30Days`, `executedDeals`); the design only
- * shows two, so `executedDeals` is read and discarded per the doc's own
- * instruction. `turnover30Days`'s `value` isn't documented as a plain
- * number or an already-formatted string with its currency baked in — typed
- * loosely (`unknown`, coerced to a display string) since either reads fine
- * as `Stats.volume30d`; `volumeAsset` has no separate field in the response
- * at all, so it ships empty until the backend clarifies.
+ * `GET /v1/otc/dashboard` — Home's two stat cards. `executedDeals` also comes back; the design doesn't
+ * show it. `turnover30Days.value` is a number in `turnover30Days.currency`, the user's display currency.
  */
 export async function getStats(): Promise<Stats> {
   const res = await apiFetch<{
-    result: { counters: { activeRequests: DashboardCounter; turnover30Days: { value: unknown; calculatedAt: string } } };
+    result: { counters: { activeRequests: DashboardCounter; turnover30Days: DashboardCounter } };
   }>('/v1/otc/dashboard', {}, false, 'financial');
-  const { counters } = res.result;
+  const { activeRequests, turnover30Days } = res.result.counters;
+  const turnover = Number(turnover30Days.value);
   return {
-    activeDeals: counters.activeRequests.value,
-    volume30d: String(counters.turnover30Days.value),
-    volumeAsset: '',
+    activeDeals: activeRequests.value,
+    volume30d: Number.isFinite(turnover) ? compactAmount(turnover) : String(turnover30Days.value),
+    volumeAsset: turnover30Days.currency ?? '',
   };
 }
 
@@ -73,7 +80,7 @@ function rateFields(raw: RawRateFields, rate: string | null | undefined): Pick<D
     return { rate: null };
   }
   const [base, quote] = directionOf(raw.direction) === 'BUY' ? [raw.assetTo, raw.assetFrom] : [raw.assetFrom, raw.assetTo];
-  const value = formatAmountInput(rate.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''));
+  const value = formatAmountInput(String(rate).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''));
   return { rate: `1 ${base} = ${value} ${quote}`, ratePerUnit: value, rateUnitLabel: `${quote} за 1 ${base}` };
 }
 
@@ -120,13 +127,37 @@ export interface OtcListFilters {
   direction?: RawDirection[];
 }
 
-/** `POST /v1/otc/deals`. `filters.statuses` omitted (not an empty array) means "Все". */
+/** The statuses one list item can't tell apart: a quote from new terms, the operator's turn from a new rate. */
+const AMBIGUOUS_IN_LIST = new Set<OtcRealStatus>(['QUOTED', 'REPRICE']);
+const MAX_REFINED = 6;
+
+/**
+ * `POST /v1/otc/deals`. `filters.statuses` omitted (not an empty array) means "Все". A deal waiting for
+ * the client's answer must say so in the list, and the list item lacks the fields that show it, so the
+ * few deals in `QUOTED`/`REPRICE` get their status from the card. A card that fails to load leaves the
+ * list's own reading.
+ */
 export async function getDeals(filters: OtcListFilters = {}, size = 20): Promise<Deal[]> {
   const res = await apiFetch<{ result: { operations: RawDealListItem[] } }>('/v1/otc/deals', {
     method: 'POST',
     body: JSON.stringify({ filters, pagination: { page: 0, size } }),
   }, false, 'financial');
-  return res.result.operations.map(mapListItem);
+  const deals = res.result.operations.map(mapListItem);
+  const ambiguous = res.result.operations
+    .map((raw, index) => ({ raw, index }))
+    .filter(({ raw }) => AMBIGUOUS_IN_LIST.has(raw.status))
+    .slice(0, MAX_REFINED);
+  await Promise.all(ambiguous.map(async ({ raw, index }) => {
+    try {
+      const card = await getDealById(raw.operationId);
+      if (card) {
+        deals[index] = { ...deals[index], status: card.status };
+      }
+    } catch (err) {
+      console.warn('[otc] could not refine the list status of', raw.requestNumber, err);
+    }
+  }));
+  return deals;
 }
 
 interface RawDocument {
@@ -197,7 +228,30 @@ interface RawDealDetail {
   documents?: RawDocument[];
 }
 
-function mapDetail(operationId: string, raw: RawDealDetail): Deal {
+/**
+ * How far the server clock is ahead of the device's, from the response `timestamp` (the contract's way
+ * to count a quote's lifetime; scenario Н-25). A difference the round trip itself explains is taken as
+ * none, so a device with a correct clock keeps its own time and only a really wrong one is corrected.
+ */
+function clockSkewMs(serverTimestamp: string | undefined, sentAt: number, receivedAt: number): number {
+  const serverNow = serverTimestamp ? Date.parse(serverTimestamp) : NaN;
+  if (!Number.isFinite(serverNow)) {
+    return 0;
+  }
+  const skew = serverNow - receivedAt;
+  return Math.abs(skew) <= (receivedAt - sentAt) + 2000 ? 0 : skew;
+}
+
+/** A server deadline as a moment on the device's clock, so countdowns can use `Date.now()`. */
+function onDeviceClock(serverTime: string | null | undefined, skewMs: number): string | undefined {
+  if (!serverTime) {
+    return undefined;
+  }
+  const at = Date.parse(serverTime);
+  return skewMs && Number.isFinite(at) ? new Date(at - skewMs).toISOString() : serverTime;
+}
+
+function mapDetail(operationId: string, raw: RawDealDetail, skewMs = 0): Deal {
   const createdAt = raw.createdAt ?? createdAtById.get(operationId);
   const status = mapOtcStatus(raw.status, raw);
   const deal: Deal = {
@@ -213,14 +267,17 @@ function mapDetail(operationId: string, raw: RawDealDetail): Deal {
     toTicker: raw.assetTo,
     amount: raw.amountFrom,
     // After the quote is accepted `rateExpiresAt` is not a top-up deadline (BRCE-4023 §4, Р1).
-    quoteExpiresAt: status === 'RATE_ACTIVE' || status === 'TERMS_PROPOSED' ? raw.rateExpiresAt ?? undefined : undefined,
+    quoteExpiresAt: status === 'RATE_ACTIVE' || status === 'TERMS_PROPOSED' ? onDeviceClock(raw.rateExpiresAt, skewMs) : undefined,
     balance: raw.balance ?? undefined,
     missingAmount: raw.missingAmount ?? undefined,
     minAmount: raw.minAmount ?? undefined,
     actualFrom: amountLabel(raw.actualAmountFrom, raw.assetFrom) ?? undefined,
     actualTo: amountLabel(raw.actualAmountTo, raw.assetTo) ?? undefined,
     holdAmount: amountLabel(raw.holdAmount, raw.assetFrom) ?? undefined,
-    documents: mapDocuments(raw.documents),
+    documents: mapDocuments(raw.documents).map((document) => ({
+      ...document,
+      hrefExpiresAt: onDeviceClock(document.hrefExpiresAt, skewMs),
+    })),
   };
   if (status === 'TERMS_PROPOSED') {
     if (raw.status === 'PROPOSED') {
@@ -251,8 +308,9 @@ function mapDetail(operationId: string, raw: RawDealDetail): Deal {
 /** `GET /v1/otc/deals/{operationId}`. `undefined` on a 404, matching the mock's `Deal | undefined` shape. */
 export async function getDealById(operationId: string): Promise<Deal | undefined> {
   try {
-    const res = await apiFetch<{ result: RawDealDetail }>(`/v1/otc/deals/${operationId}`, {}, false, 'financial');
-    return mapDetail(operationId, res.result);
+    const sentAt = Date.now();
+    const res = await apiFetch<{ timestamp?: string; result: RawDealDetail }>(`/v1/otc/deals/${operationId}`, {}, false, 'financial');
+    return mapDetail(operationId, res.result, clockSkewMs(res.timestamp, sentAt, Date.now()));
   } catch (err) {
     if (err instanceof ApiError && err.httpStatus === 404) {
       return undefined;
@@ -394,7 +452,7 @@ const SETTLE_CHECKS = 5;
 /**
  * Most commands are asynchronous: the answer carries the status at intake and the result lands a
  * moment later (BRCE-4023 §2). The card is re-read a few times, a second apart, until the screen
- * changes; polling and notifications pick up anything slower.
+ * changes; the screen's own polling picks up anything slower.
  */
 async function settle(operationId: string, before: DealStatus): Promise<Deal | undefined> {
   let deal = await getDealById(operationId);
@@ -441,54 +499,61 @@ const LINK_MARGIN_MS = 20_000;
 
 export class DocumentUnavailableError extends Error {}
 
+/** A gateway path is fetched with the session token; anything else is a link to open as is. */
+async function linkOrTokenFetch(href: string): Promise<string | Blob> {
+  const path = gatewayPath('financial', href);
+  return path === undefined ? href : apiFetchBlob(path);
+}
+
 /**
- * BRCE-4023 §7: a document opens in the browser from its short-lived signed `href`, no token needed —
- * it isn't downloaded by the app. The link lives a couple of minutes, so it's taken from a fresh card
- * unless the one on screen still has time on it, which also keeps the tap's user gesture for
- * Telegram. Returns the fresh deal when one was read. A contour without a signing secret still sends a
- * relative path: that one is fetched with the session token, which only works where the app has
- * browser tabs.
+ * BRCE-4023 §7: a document opens in the browser from its short-lived signed `href`, no token needed.
+ * The link lives a couple of minutes: one with time left opens straight from the tap; otherwise a
+ * fresh card is read first and returned. A contour without a signing secret still sends a relative
+ * path, which is fetched with the session token and only opens where the app has browser tabs. Must be
+ * called from the tap handler.
  */
 export async function openDealDocument(deal: Deal, kind: DealDocumentKind): Promise<Deal | undefined> {
   const current = deal.documents?.find((document) => document.kind === kind);
-  if (current?.available && current.href && current.hrefExpiresAt && msUntil(current.hrefExpiresAt) > LINK_MARGIN_MS) {
-    openExternalLink(current.href);
-    return undefined;
+  if (current?.available && current.href) {
+    const { href, hrefExpiresAt } = current;
+    if (!hrefExpiresAt) {
+      await openWhenReady(() => linkOrTokenFetch(href));
+      return undefined;
+    }
+    if (msUntil(hrefExpiresAt) > LINK_MARGIN_MS) {
+      openExternalLink(href);
+      return undefined;
+    }
   }
-  const fresh = await getDealById(deal.id);
-  const document = fresh?.documents?.find((item) => item.kind === kind);
-  if (!document?.available || !document.href) {
-    throw new DocumentUnavailableError(`Document ${kind} is not available now`);
-  }
-  if (document.hrefExpiresAt) {
-    openExternalLink(document.href);
-    return fresh;
-  }
-  const path = gatewayPath('financial', document.href);
-  if (path === undefined) {
-    openExternalLink(document.href);
-    return fresh;
-  }
-  await openFetchedPdf(() => apiFetchBlob(path));
+  let fresh: Deal | undefined;
+  await openWhenReady(async () => {
+    fresh = await getDealById(deal.id);
+    const document = fresh?.documents?.find((item) => item.kind === kind);
+    if (!document?.available || !document.href) {
+      throw new DocumentUnavailableError(`Document ${kind} is not available now`);
+    }
+    return document.hrefExpiresAt ? document.href : linkOrTokenFetch(document.href);
+  });
   return fresh;
 }
 
 /**
  * The OTC account certificate (`ACCOUNT_ACCEPTANCE_CERTIFICATE`, BRCE-4023 §7, Р6) by a signed link.
- * 409 means the contour has no signing secret yet: the file is then downloaded with the token.
+ * 409 means the contour has no signing secret yet: the file is then fetched with the token. Must be
+ * called from the tap handler.
  */
 export async function openAccountCertificate(): Promise<void> {
-  let link: { href: string; expiresAt: string };
-  try {
-    link = (await apiFetch<{ result: { href: string; expiresAt: string } }>(
-      '/v1/otc/documents/account-acceptance-certificate/link', { method: 'POST' }, false, 'financial',
-    )).result;
-  } catch (err) {
-    if (err instanceof ApiError && err.httpStatus === 409) {
-      await openFetchedPdf(() => apiFetchBlob('/v1/otc/documents/account-acceptance-certificate'));
-      return;
+  await openWhenReady(async () => {
+    try {
+      const link = await apiFetch<{ result: { href: string; expiresAt: string } }>(
+        '/v1/otc/documents/account-acceptance-certificate/link', { method: 'POST' }, false, 'financial',
+      );
+      return link.result.href;
+    } catch (err) {
+      if (err instanceof ApiError && err.httpStatus === 409) {
+        return apiFetchBlob('/v1/otc/documents/account-acceptance-certificate');
+      }
+      throw err;
     }
-    throw err;
-  }
-  openExternalLink(link.href);
+  });
 }
