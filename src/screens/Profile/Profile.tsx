@@ -12,7 +12,6 @@ import type { User } from '@/api/index.ts';
 import { useRequireSession, useSessionStore } from '@/store/session.ts';
 import { useSettingsStore } from '@/store/settings.ts';
 import { useToastStore } from '@/store/toast.ts';
-import { useUiStore } from '@/store/ui.ts';
 import { useCopy } from '@/lib/useCopy.ts';
 import { groupOf4 } from '@/lib/text.ts';
 import { maskEmail } from '@/lib/mask.ts';
@@ -132,19 +131,18 @@ export function Profile() {
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
   const [themeModalOpen, setThemeModalOpen] = useState(false);
 
-  // Read again when the verification level changes: the badge follows it.
-  const userVersion = useUiStore((s) => s.userVersion);
   const load = useCallback(async () => {
     if (!session) {
       return;
     }
     setError(false);
+    setUser(undefined);
     try {
       setUser(await getUser(session.clientType));
     } catch {
       setError(true);
     }
-  }, [session, userVersion]);
+  }, [session]);
 
   useEffect(() => {
     void load();
@@ -158,7 +156,7 @@ export function Profile() {
   const [certificateLoading, setCertificateLoading] = useState(false);
 
   // Mock mode just opens the bundled sample PDF. Real mode asks for a signed
-  // link to the OTC account certificate (BRCE-4023 §7) and downloads it.
+  // link to the OTC account certificate (BRCE-4023 §7) and opens it.
   async function handleCertificate() {
     if (!USE_REAL_API) {
       openExternalLink(SAMPLE_DOCUMENT_URL);

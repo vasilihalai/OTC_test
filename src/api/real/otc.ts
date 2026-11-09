@@ -18,7 +18,7 @@ import { formatDealDate } from '@/lib/date.ts';
 import { msUntil } from '@/lib/countdown.ts';
 import { formatAmount, formatAmountInput } from '@/lib/money.ts';
 import { type OtcRealStatus, mapOtcStatus } from '@/lib/otcStatus.ts';
-import { openExternalLink, openFetchedPdf, openSignedLink } from '@/telegram/adapter.ts';
+import { openExternalLink, openFetchedPdf } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -138,18 +138,24 @@ interface RawDocument {
 }
 
 /**
- * The deal's documents are `PAYMENT_INSTRUCTION` and `EXECUTION_ACT` (BRCE-4023 §7). Anything else stays
- * off screen: FR-7's "Операция трейдера" must never reach the client, and the account certificate
+ * The deal's documents are `PAYMENT_INSTRUCTION` and `EXECUTION_ACT` (BRCE-4023 §7); the acceptance's
+ * key isn't settled yet, so any deal-level `…ACCEPT…` key is read as it. Anything else stays off screen:
+ * FR-7's "Операция трейдера" must never reach the client, and the account certificate
  * (`ACCOUNT_ACCEPTANCE_CERTIFICATE`) is not a deal document.
  */
-const DOCUMENT_KINDS: Record<string, DealDocumentKind> = {
-  PAYMENT_INSTRUCTION: 'payment',
-  EXECUTION_ACT: 'certificate',
-};
+function documentKind(nameKey: string): DealDocumentKind | undefined {
+  if (nameKey === 'PAYMENT_INSTRUCTION') {
+    return 'payment';
+  }
+  if (nameKey === 'EXECUTION_ACT') {
+    return 'certificate';
+  }
+  return nameKey.includes('ACCEPT') && !nameKey.startsWith('ACCOUNT_') ? 'accept' : undefined;
+}
 
 function mapDocuments(raw: RawDocument[] = []): DealDocument[] {
   return raw.flatMap((document) => {
-    const kind = DOCUMENT_KINDS[document.nameKey];
+    const kind = documentKind(document.nameKey);
     if (!kind) {
       console.warn('[otc] Unknown document, not shown:', document.nameKey);
       return [];
@@ -159,7 +165,6 @@ function mapDocuments(raw: RawDocument[] = []): DealDocument[] {
       href: document.href ?? undefined,
       hrefExpiresAt: document.hrefExpiresAt ?? undefined,
       available: document.available !== false,
-      hint: document.availabilityHint ?? undefined,
     }];
   });
 }
@@ -256,48 +261,56 @@ export async function getDealById(operationId: string): Promise<Deal | undefined
   }
 }
 
+interface RawCryptoRequisites {
+  currency: string;
+  network?: string | null;
+  networkLabel?: string | null;
+  address: string;
+}
+
 interface RawRequisites {
   kind: 'FIAT' | 'CRYPTO';
   title?: string | null;
   paymentPurpose?: string | null;
   bank?: Record<string, string | null> | null;
-  crypto?: { currency: string; network?: string | null; networkLabel?: string | null; address: string } | null;
+  /** One network today; a list once the backend sends every network of the asset (asked for). */
+  crypto?: RawCryptoRequisites | RawCryptoRequisites[] | null;
 }
 
 const BANK_FIELDS = [
-  'recipientName', 'recipientAddress', 'recipientAccount', 'account', 'bankName', 'bankAddress', 'bic', 'bankSwift',
-  'correspondentBankName', 'correspondentBankAddress', 'correspondentBankSwift',
+  'companyName', 'recipientName', 'recipientAddress', 'recipientAccount', 'account', 'bankName', 'bankAddress', 'bic',
+  'bankSwift', 'correspondentAccount', 'correspondentBankName', 'correspondentBankAddress', 'correspondentBankSwift',
   'intermediaryBankName', 'intermediaryBankAddress', 'intermediaryBankSwift',
 ] as const;
 
 /**
  * `GET /v1/otc/deals/{operationId}/requisites` (BRCE-4023 §1): on a purchase the account the operator
- * chose in CRM (auto-picked when `title` is null), on a sale the client's own deposit address. Same
- * source as the PDF, so the screen and the payment instruction match. Read once per screen — the
- * method is not meant for polling. 409 means the deal is in a status without requisites, 404 an
- * unknown deal: both just leave the panel out.
+ * chose in CRM (auto-picked when `title` is null); on a sale or an exchange the coin, network and
+ * deposit address — one per network, and the client picks when there are several. Read once per
+ * screen, the method is not meant for polling. Any failure, an empty answer included, throws: the
+ * screen offers a retry.
  */
-export async function getDealRequisites(operationId: string): Promise<Requisites | undefined> {
-  let raw: RawRequisites;
-  try {
-    raw = (await apiFetch<{ result: RawRequisites }>(`/v1/otc/deals/${operationId}/requisites`, {}, false, 'financial')).result;
-  } catch (err) {
-    if (err instanceof ApiError && (err.httpStatus === 409 || err.httpStatus === 404)) {
-      console.warn('[otc] no requisites for this deal now', err.httpStatus, err.code);
-      return undefined;
+export async function getDealRequisites(operationId: string): Promise<Requisites> {
+  const raw = (await apiFetch<{ result: RawRequisites }>(`/v1/otc/deals/${operationId}/requisites`, {}, false, 'financial')).result;
+  if (raw.kind === 'CRYPTO') {
+    const list = (Array.isArray(raw.crypto) ? raw.crypto : raw.crypto ? [raw.crypto] : []).filter((item) => item.address);
+    if (list.length === 0) {
+      throw new Error('Crypto requisites without an address');
     }
-    throw err;
-  }
-  if (raw.kind === 'CRYPTO' && raw.crypto) {
+    const networks = list.map((item) => ({ network: item.networkLabel || item.network || '', address: item.address }));
     return {
       kind: 'crypto',
-      asset: raw.crypto.currency,
-      assetName: assetName(raw.crypto.currency),
-      network: raw.crypto.networkLabel || raw.crypto.network || '',
-      address: raw.crypto.address,
+      asset: list[0].currency,
+      assetName: assetName(list[0].currency),
+      network: networks[0].network,
+      address: networks[0].address,
+      networks,
     };
   }
-  const bank = raw.bank ?? {};
+  if (!raw.bank) {
+    throw new Error('Fiat requisites without bank details');
+  }
+  const bank = raw.bank;
   const requisites: FiatRequisites = {
     kind: 'fiat',
     title: raw.title ?? undefined,
@@ -416,16 +429,17 @@ const LINK_MARGIN_MS = 20_000;
 export class DocumentUnavailableError extends Error {}
 
 /**
- * BRCE-4023 §7: a document opens from its signed `href` without a token. The link lives a couple of
- * minutes, so it's taken from a fresh card unless the one on screen still has time on it — that keeps
- * the tap's user gesture for Telegram. Returns the fresh deal when one was read. A contour without a
- * signing secret still sends a relative path: that is downloaded with the session token, which only
- * works where the app has browser tabs.
+ * BRCE-4023 §7: a document opens in the browser from its short-lived signed `href`, no token needed —
+ * it isn't downloaded by the app. The link lives a couple of minutes, so it's taken from a fresh card
+ * unless the one on screen still has time on it, which also keeps the tap's user gesture for
+ * Telegram. Returns the fresh deal when one was read. A contour without a signing secret still sends a
+ * relative path: that one is fetched with the session token, which only works where the app has
+ * browser tabs.
  */
-export async function openDealDocument(deal: Deal, kind: DealDocumentKind, fileName: string): Promise<Deal | undefined> {
+export async function openDealDocument(deal: Deal, kind: DealDocumentKind): Promise<Deal | undefined> {
   const current = deal.documents?.find((document) => document.kind === kind);
   if (current?.available && current.href && current.hrefExpiresAt && msUntil(current.hrefExpiresAt) > LINK_MARGIN_MS) {
-    await openSignedLink(current.href, fileName);
+    openExternalLink(current.href);
     return undefined;
   }
   const fresh = await getDealById(deal.id);
@@ -434,7 +448,7 @@ export async function openDealDocument(deal: Deal, kind: DealDocumentKind, fileN
     throw new DocumentUnavailableError(`Document ${kind} is not available now`);
   }
   if (document.hrefExpiresAt) {
-    await openSignedLink(document.href, fileName);
+    openExternalLink(document.href);
     return fresh;
   }
   const path = gatewayPath('financial', document.href);
@@ -463,5 +477,5 @@ export async function openAccountCertificate(): Promise<void> {
     }
     throw err;
   }
-  await openSignedLink(link.href, ru.profile.certificateFileName);
+  openExternalLink(link.href);
 }

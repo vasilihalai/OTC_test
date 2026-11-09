@@ -8,7 +8,6 @@ import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import { getUser } from '@/api/index.ts';
 import type { OtcAccessReason, User } from '@/api/index.ts';
 import { useSessionStore } from '@/store/session.ts';
-import { useUiStore } from '@/store/ui.ts';
 import { ru } from '@/i18n/ru.ts';
 
 export function OtcUnavailable() {
@@ -21,10 +20,6 @@ export function OtcUnavailable() {
   const [user, setUser] = useState<User>();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  // Bumped when the verification level changes while this screen is open (BRCE-4023 §8).
-  const userVersion = useUiStore((s) => s.userVersion);
-  const [initialUserVersion] = useState(userVersion);
-  const rechecked = userVersion !== initialUserVersion;
 
   useEffect(() => {
     if (session) {
@@ -34,14 +29,7 @@ export function OtcUnavailable() {
         setFailed(true);
       });
     }
-  }, [session, attempt, userVersion]);
-
-  // Verification passed while the client waited here: OTC opens without a restart.
-  useEffect(() => {
-    if (rechecked && user?.otcAccess === 'GRANTED') {
-      navigate('/home', { replace: true });
-    }
-  }, [rechecked, user, navigate]);
+  }, [session, attempt]);
 
   if (!user) {
     return failed
@@ -49,7 +37,7 @@ export function OtcUnavailable() {
       : <div className="page-loader"><Spinner size={28}/></div>;
   }
 
-  const reason = rechecked ? user.otcAccess : locationReason ?? user.otcAccess;
+  const reason = locationReason ?? user.otcAccess;
 
   // `DESK_CLOSED` (api-integration.md §7.1, question B9) has nothing
   // external to link to — there's no "come back later" URL, so its action

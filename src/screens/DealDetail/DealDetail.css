@@ -110,6 +110,15 @@
   color: var(--positive);
 }
 
+/* Same as the requisites panel's own heading, for its "couldn't load" state. */
+.deal-detail__requisites-title {
+  margin: 0 0 16px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--text-body);
+}
+
 /* New terms and a new rate: what is being replaced reads quieter than what replaces it. */
 .quote-card__was {
   color: var(--text-muted);

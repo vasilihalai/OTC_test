@@ -230,6 +230,17 @@ export const MOCK_DEALS: Deal[] = [
     toTicker: 'USDT',
   },
   {
+    id: 'OTC-1046',
+    status: 'AWAITING_FUNDS',
+    date: '09.08.2026 15:20',
+    direction: 'SELL',
+    from: '75 000 USDT',
+    to: '6 558 750 KGS',
+    rate: '1 USDT = 87.45 KGS',
+    ticker: 'USDT',
+    toTicker: 'KGS',
+  },
+  {
     id: 'OTC-1044',
     status: 'DONE',
     date: '08.08.2026 14:02',
@@ -307,10 +318,12 @@ export const MOCK_MIN_DEAL: Record<string, string> = {
   BTC: '0.15',
 };
 
-/** `kind: FIAT` of the requisites method: a KGS account at a local bank, picked by the operator. */
+/** `kind: FIAT` of the requisites method: a KGS account at a local bank, picked by the operator; the frame's values. */
 export const MOCK_REQUISITES_FIAT: FiatRequisites = {
   kind: 'fiat',
   title: 'Бакай, KGS',
+  companyName: 'ОАО «СО ЕЭС»',
+  correspondentAccount: '30100012345678976190',
   recipientName: 'ОАО «БитРуби»',
   recipientAddress: 'Кыргызская Республика, г. Бишкек, Ленинский район, ул. Тыныстанова 249',
   recipientAccount: '1240020001397008',
@@ -337,11 +350,17 @@ export const MOCK_REQUISITES_FIAT_SWIFT: FiatRequisites = {
   purpose: 'Payment under request No. {requestNumber}. VAT exempt',
 };
 
-/** `kind: CRYPTO`: the client's own deposit address, one network per asset, as the method sends it. */
-export const MOCK_CRYPTO_DEPOSIT: Record<string, Omit<CryptoRequisites, 'kind' | 'asset'>> = {
-  USDT: { assetName: 'Tether', network: 'TRON (TRC-20)', address: 'TQmVaGCVZ8bYtq1cJ4pF7nR2wS9dLxK3Yu' },
-  USDC: { assetName: 'USD Coin', network: 'Ethereum (ERC-20)', address: '0x71C7656EC7ab88b098defB7501B1f9A5C2b3E4d' },
-  BTC: { assetName: 'Bitcoin', network: 'Bitcoin', address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh' },
+/** `kind: CRYPTO`: the client's own deposit address per network — as many networks as the asset has. */
+export const MOCK_CRYPTO_DEPOSIT: Record<string, { assetName: string; networks: NonNullable<CryptoRequisites['networks']> }> = {
+  USDT: {
+    assetName: 'Tether',
+    networks: [
+      { network: 'TRON (TRC-20)', address: 'TQmVaGCVZ8bYtq1cJ4pF7nR2wS9dLxK3Yu' },
+      { network: 'Ethereum (ERC-20)', address: '0x71C7656EC7ab88b098defB7501B1f9A5C2b3E4d' },
+    ],
+  },
+  USDC: { assetName: 'USD Coin', networks: [{ network: 'Ethereum (ERC-20)', address: '0x8f3A92c17b4E55d0A6f23e81c94B1d07a5C2b3E4' }] },
+  BTC: { assetName: 'Bitcoin', networks: [{ network: 'Bitcoin', address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh' }] },
 };
 
 export const MOCK_ASSETS: Asset[] = [

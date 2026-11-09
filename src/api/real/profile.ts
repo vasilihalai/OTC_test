@@ -97,11 +97,6 @@ export function getUser(_clientType: ClientType): Promise<User> {
   return userCache.get();
 }
 
-/** After the verification level changes: the next read asks again. */
-export function invalidateUser(): void {
-  userCache.invalidate();
-}
-
 /**
  * The verified badge reads the token's `level` (BRCE-4023 §8). The OTC gate's failure must not take the
  * profile down: unknown access falls back to GRANTED, since the backend still enforces access on every

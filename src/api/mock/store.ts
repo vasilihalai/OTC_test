@@ -7,25 +7,16 @@ import { SAMPLE_DOCUMENT_URL } from '@/lib/sampleDocument.ts';
 const PAYMENT_AVAILABLE: DealStatus[] = ['AWAITING_FUNDS', 'SHORTFALL_REVIEW', 'REPRICE_PROPOSED', 'RUNNING', 'DONE'];
 
 /**
- * The two documents the backend sends for a deal (BRCE-4023 §7), with its availability and hint codes:
- * the payment instruction once the quote is accepted, the execution act after settlement.
+ * The three deal documents (BRD FR-7, the frames): the acceptance and the payment instruction once the
+ * quote is accepted, the execution certificate after settlement.
  */
 function documentsFor(status: DealStatus): DealDocument[] {
-  const payment = PAYMENT_AVAILABLE.includes(status);
-  const certificate = status === 'DONE';
+  const accepted = PAYMENT_AVAILABLE.includes(status);
+  const settled = status === 'DONE';
   return [
-    {
-      kind: 'payment',
-      available: payment,
-      href: payment ? SAMPLE_DOCUMENT_URL : undefined,
-      hint: payment ? undefined : 'PAYMENT_INSTRUCTION_AVAILABLE_AFTER_QUOTE_ACCEPTANCE',
-    },
-    {
-      kind: 'certificate',
-      available: certificate,
-      href: certificate ? SAMPLE_DOCUMENT_URL : undefined,
-      hint: certificate ? undefined : 'EXECUTION_ACT_AVAILABLE_AFTER_SETTLEMENT',
-    },
+    { kind: 'accept', available: accepted, href: accepted ? SAMPLE_DOCUMENT_URL : undefined },
+    { kind: 'payment', available: accepted, href: accepted ? SAMPLE_DOCUMENT_URL : undefined },
+    { kind: 'certificate', available: settled, href: settled ? SAMPLE_DOCUMENT_URL : undefined },
   ];
 }
 

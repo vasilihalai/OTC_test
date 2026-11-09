@@ -27,7 +27,7 @@ import {
 import { findDeal, listDeals } from '@/api/mock/store.ts';
 import { getAccountBalance, getAccountsSnapshot } from '@/api/mock/accountsStore.ts';
 import { isFiatTicker } from '@/lib/money.ts';
-import { otcAccessOverride } from '@/lib/devSwitches.ts';
+import { isRequisitesErrorScenario, otcAccessOverride } from '@/lib/devSwitches.ts';
 import { paymentTypeMeta } from '@/lib/paymentType.ts';
 
 export async function getUser(clientType: ClientType): Promise<User> {
@@ -52,9 +52,12 @@ export async function getDealById(id: string): Promise<Deal | undefined> {
   return findDeal(id);
 }
 
-/** Like the requisites method: fiat — the operator's account (SWIFT for USD), crypto — the deposit address. */
+/** Like the requisites method: fiat — the operator's account (SWIFT for USD), crypto — an address per network. */
 export async function getRequisites(id: string): Promise<Requisites | undefined> {
   await mockDelay();
+  if (isRequisitesErrorScenario()) {
+    throw new Error('Mock requisites failure (?requisites=error)');
+  }
   const deal = findDeal(id);
   if (!deal) {
     return undefined;
@@ -64,7 +67,11 @@ export async function getRequisites(id: string): Promise<Requisites | undefined>
     return { ...requisites, purpose: requisites.purpose?.replace('{requestNumber}', deal.requestNumber ?? deal.id) };
   }
   const deposit = MOCK_CRYPTO_DEPOSIT[deal.ticker];
-  return deposit ? { kind: 'crypto', asset: deal.ticker, ...deposit } : undefined;
+  if (!deposit) {
+    return undefined;
+  }
+  const [first] = deposit.networks;
+  return { kind: 'crypto', asset: deal.ticker, assetName: deposit.assetName, network: first.network, address: first.address, networks: deposit.networks };
 }
 
 export async function getAssets(group: AssetGroup): Promise<Asset[]> {

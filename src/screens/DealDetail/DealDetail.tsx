@@ -51,7 +51,6 @@ import {
 import { formatAmount, parseAmountWithTicker } from '@/lib/money.ts';
 import { formatCountdown, msUntil } from '@/lib/countdown.ts';
 import { usePolling } from '@/lib/usePolling.ts';
-import { useRealtimeConnected, useRealtimeEvent } from '@/lib/useRealtime.ts';
 import { renderTemplate } from '@/lib/template.tsx';
 import { SAMPLE_DOCUMENT_URL } from '@/lib/sampleDocument.ts';
 import { notifyError, openExternalLink } from '@/telegram/adapter.ts';
@@ -71,14 +70,14 @@ const DOCUMENT_NAMES: Record<DealDocumentKind, string> = {
   certificate: ru.dealDetail.documentCertificate,
 };
 
+/** All three rows always show, as in the frames and BRD FR-7; a document the backend hasn't sent stays locked. */
 const DOCUMENT_ORDER: DealDocumentKind[] = ['accept', 'payment', 'certificate'];
 
 /**
- * BRCE-4023 §9: without the socket the card is read every 4 seconds, so a top-up shows up within the
- * 5 seconds the BRD asks for; with it, notifications drive the updates and polling is a safety net.
+ * The card — status, balance, shortfall — is re-read over REST every 20 seconds while the screen is open,
+ * and at once when the app comes back to the foreground.
  */
-const POLL_MS = 4_000;
-const POLL_CONNECTED_MS = 30_000;
+const POLL_MS = 20_000;
 
 function showDealError(err: unknown, fallback: string) {
   console.error('[DealDetail] action failed', err);
@@ -171,7 +170,6 @@ export function DealDetail() {
   const [notFound, setNotFound] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const connected = useRealtimeConnected();
 
   useEffect(() => {
     if (!id) {
@@ -199,19 +197,7 @@ export function DealDetail() {
     }
   }, [id]);
 
-  usePolling(refresh, connected ? POLL_CONNECTED_MS : POLL_MS, USE_REAL_API && !!deal && !isTerminalDealStatus(deal.status));
-
-  useRealtimeEvent((event) => {
-    if (!deal) {
-      return;
-    }
-    if (event.type === 'operation-status' && event.operationId === deal.id) {
-      refresh();
-    } else if (event.type === 'wallet-changed' && deal.status === 'AWAITING_FUNDS') {
-      // The card carries the balance and the shortfall, computed at the moment it's read.
-      refresh();
-    }
-  });
+  usePolling(refresh, POLL_MS, USE_REAL_API && !!deal && !isTerminalDealStatus(deal.status));
 
   if (failed && !deal) {
     return (
@@ -294,31 +280,22 @@ function DealBody(props: BodyProps) {
   }
 }
 
-function documentCaption(deal: Deal, document: DealDocument): string | undefined {
-  // A declined deal never gets its documents, so there's nothing to wait for.
-  if (deal.status === 'DECLINED') {
-    return undefined;
-  }
-  return (document.hint && ru.dealDetail.documentHints[document.hint]) || ru.dealDetail.documentUnavailableCaption;
-}
-
-/** The deal's documents as the backend lists them (BRCE-4023 §7), opened by their signed links. */
+/**
+ * The three deal documents, opened by their short-lived signed links (BRCE-4023 §7). A locked row reads
+ * "Станет доступен позже", as in the frames; a declined deal's rows have no caption, since they won't
+ * come.
+ */
 function DealDocuments({ deal, onUpdate, refresh }: BodyProps) {
   const [opening, setOpening] = useState<DealDocumentKind>();
-  const documents = DOCUMENT_ORDER.flatMap((kind) => deal.documents?.filter((document) => document.kind === kind) ?? []);
-  if (documents.length === 0) {
-    return null;
-  }
 
-  async function handleOpen(document: DealDocument) {
+  async function handleOpen(kind: DealDocumentKind) {
     if (!USE_REAL_API) {
       openExternalLink(SAMPLE_DOCUMENT_URL);
       return;
     }
-    const name = DOCUMENT_NAMES[document.kind].replace(/\.pdf$/, '');
-    setOpening(document.kind);
+    setOpening(kind);
     try {
-      const fresh = await openDealDocument(deal, document.kind, `${name} ${deal.requestNumber ?? deal.id}.pdf`);
+      const fresh = await openDealDocument(deal, kind);
       if (fresh) {
         onUpdate(fresh);
       }
@@ -337,16 +314,19 @@ function DealDocuments({ deal, onUpdate, refresh }: BodyProps) {
   return (
     <div className="deal-detail__section">
       <h2 className="deal-detail__section-title">{ru.dealDetail.documentsTitle}</h2>
-      {documents.map((document) => (
-        <DocumentRow
-          key={document.kind}
-          name={DOCUMENT_NAMES[document.kind]}
-          enabled={document.available && !!document.href}
-          caption={documentCaption(deal, document)}
-          loading={opening === document.kind}
-          onOpen={() => void handleOpen(document)}
-        />
-      ))}
+      {DOCUMENT_ORDER.map((kind) => {
+        const document: DealDocument | undefined = deal.documents?.find((item) => item.kind === kind);
+        return (
+          <DocumentRow
+            key={kind}
+            name={DOCUMENT_NAMES[kind]}
+            enabled={!!document?.available && !!document.href}
+            caption={deal.status === 'DECLINED' ? undefined : ru.dealDetail.documentUnavailableCaption}
+            loading={opening === kind}
+            onOpen={() => void handleOpen(kind)}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -518,6 +498,8 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
   // null = no dev override, show the real deposit balance.
   const scenario = USE_REAL_API ? null : (isBalanceScenario(urlScenario) ? urlScenario : storeScenario);
   const [requisites, setRequisites] = useState<Requisites>();
+  const [requisitesFailed, setRequisitesFailed] = useState(false);
+  const [requisitesAttempt, setRequisitesAttempt] = useState(0);
   const [accountBalance, setAccountBalance] = useState<string>();
   const [balanceFailed, setBalanceFailed] = useState(false);
   const [balanceAttempt, setBalanceAttempt] = useState(0);
@@ -529,11 +511,20 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
   // The card's balance is the server's own figure; the deposit balance is only a fallback for a card without one.
   const cardBalance = USE_REAL_API ? deal.balance : undefined;
 
+  // Read once per screen (the method isn't meant for polling); a failure offers a retry in the panel's place.
   useEffect(() => {
-    void getDealRequisites(deal.id).then(setRequisites).catch((err: unknown) => {
+    setRequisitesFailed(false);
+    void getDealRequisites(deal.id).then((data) => {
+      if (data) {
+        setRequisites(data);
+      } else {
+        setRequisitesFailed(true);
+      }
+    }).catch((err: unknown) => {
       console.error('[DealDetail] requisites load failed', err);
+      setRequisitesFailed(true);
     });
-  }, [deal.id]);
+  }, [deal.id, requisitesAttempt]);
 
   // Explicit dev override only — forces the mock deposit balance to whatever produces the requested case.
   useEffect(() => {
@@ -626,7 +617,15 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
         {ru.dealDetail.declineAction}
       </Button>
 
-      {(branch === 'short' || branch === 'belowmin') && requisites && <RequisitesPanel requisites={requisites}/>}
+      {(branch === 'short' || branch === 'belowmin') && (
+        requisites ? <RequisitesPanel requisites={requisites}/>
+          : requisitesFailed ? (
+            <Panel fill="surface" radius="16px">
+              <h2 className="deal-detail__requisites-title">{ru.dealDetail.requisitesTitle}</h2>
+              <LoadError message={ru.dealDetail.requisitesError} onRetry={() => setRequisitesAttempt((n) => n + 1)}/>
+            </Panel>
+          ) : <Skeleton height={200} radius={16}/>
+      )}
 
       <ConfirmDialog
         open={declineDialogOpen}

@@ -73,9 +73,9 @@ export type DealStatus =
 export type DealDirection = 'BUY' | 'SELL' | 'EXCHANGE';
 
 /**
- * Client-facing deal documents (BRD FR-7). The backend sends `PAYMENT_INSTRUCTION` → `payment` and
- * `EXECUTION_ACT` → `certificate`; there is no separate acceptance document (BRCE-4023 §7, decision Р2),
- * so `accept` only shows up if the backend ever sends one.
+ * The three client-facing deal documents (BRD FR-7). The backend sends `PAYMENT_INSTRUCTION` → `payment`
+ * and `EXECUTION_ACT` → `certificate`; the acceptance has no document there yet (asked for), so its row
+ * stays locked until one comes.
  */
 export type DealDocumentKind = 'accept' | 'payment' | 'certificate';
 
@@ -87,8 +87,6 @@ export interface DealDocument {
   /** ISO timestamp — when the signed `href` stops working. */
   hrefExpiresAt?: string;
   available: boolean;
-  /** The backend's `availabilityHint` code, translated on screen. */
-  hint?: string;
 }
 
 /** One side of a deal's terms, ready to show. */
@@ -313,6 +311,9 @@ export interface FiatRequisites {
   kind: 'fiat';
   title?: string;
   purpose?: string;
+  /** The frame's "Наименование компании" and "Корреспондентский счёт": not in the contract yet, asked for. */
+  companyName?: string;
+  correspondentAccount?: string;
   recipientName?: string;
   recipientAddress?: string;
   recipientAccount?: string;

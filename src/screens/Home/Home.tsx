@@ -11,12 +11,12 @@ import { EmptyState } from '@/components/EmptyState/EmptyState.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
 import { Checkbox } from '@/components/Checkbox/Checkbox.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
-import { getAssets, getDeals, getStats, getUser } from '@/api/index.ts';
+import { USE_REAL_API, getAssets, getDeals, getStats, getUser, invalidateBalances } from '@/api/index.ts';
 import type { Asset, AssetGroup, Deal, Stats, User } from '@/api/index.ts';
 import { useRequireOtcAccess, useRequireSession } from '@/store/session.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { formatAmount } from '@/lib/money.ts';
-import { useRealtimeEvent } from '@/lib/useRealtime.ts';
+import { usePolling } from '@/lib/usePolling.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './Home.css';
@@ -76,13 +76,11 @@ export function Home() {
     loadAssets();
   }, [loadAssets, balancesVersion]);
 
-  // A deal changed status: the recent deals and the active count may have moved with it.
-  useRealtimeEvent((event) => {
-    if (event.type === 'operation-status') {
-      void getStats().then(setStats).catch(() => undefined);
-      void getDeals().then(setDeals).catch(() => undefined);
-    }
-  });
+  // Balances follow REST: every 20 seconds while Home is open, and at once on coming back to the app.
+  usePolling(() => {
+    invalidateBalances();
+    loadAssets();
+  }, 20_000, USE_REAL_API);
 
   function retry() {
     setLoadFailed(false);

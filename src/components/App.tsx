@@ -11,7 +11,6 @@ import { TransferModal } from '@/components/TransferModal/TransferModal.tsx';
 import { Spinner } from '@/components/Spinner/Spinner.tsx';
 import { useSessionStore } from '@/store/session.ts';
 import { useAppBackButton, useGoBack } from '@/telegram/backButton.ts';
-import { useRealtimeLifecycle } from '@/lib/useRealtime.ts';
 
 // Lets the first screen's own requests go out before the other screens' chunks are fetched.
 const PREFETCH_DELAY_MS = 1500;
@@ -34,7 +33,6 @@ function Shell() {
   const location = useLocation();
   const goBack = useGoBack();
   useAppBackButton();
-  useRealtimeLifecycle();
 
   useEffect(() => {
     const timer = setTimeout(prefetchScreens, PREFETCH_DELAY_MS);

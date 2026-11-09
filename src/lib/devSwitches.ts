@@ -33,6 +33,11 @@ export function isQuoteExpiringScenario(): boolean {
   return readHashParam('scenario') === 'quote_expiring';
 }
 
+/** `?requisites=error` — deposit requisites fail to load, for the retry state on the top-up screen. */
+export function isRequisitesErrorScenario(): boolean {
+  return readHashParam('requisites') === 'error';
+}
+
 /** `?scenario=empty_deals` — deals list loads empty, for the empty-state screens. */
 export function isEmptyDealsScenario(): boolean {
   return readHashParam('scenario') === 'empty_deals';

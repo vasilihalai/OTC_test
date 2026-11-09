@@ -29,23 +29,25 @@ function FiatRow({ label, value, copy }: { label: string; value: string; copy: (
 }
 
 /**
- * The fiat rows in the payment instruction's order (BRCE-4023 Д6), so the screen and the PDF match.
- * Empty fields aren't shown; the beneficiary's own account only when it differs from the settlement
- * one (SWIFT accounts).
+ * The fiat rows in the frame's order and wording; the contract's SWIFT, beneficiary-account and
+ * correspondent/intermediary bank rows sit next to their kin. Empty fields aren't shown; the
+ * beneficiary's own account only when it differs from the settlement one (SWIFT accounts).
  */
 function fiatRows(requisites: FiatRequisites): [string, string][] {
   const rows: [string, string | undefined][] = [
-    [ru.dealDetail.requisitesRecipient, requisites.recipientName],
-    [ru.dealDetail.requisitesRecipientAddress, requisites.recipientAddress],
-    [ru.dealDetail.requisitesSettlementAccount, requisites.recipientAccount],
-    [
-      ru.dealDetail.requisitesBeneficiaryAccount,
-      requisites.account !== requisites.recipientAccount ? requisites.account : undefined,
-    ],
+    [ru.dealDetail.requisitesCompanyName, requisites.companyName],
     [ru.dealDetail.requisitesBank, requisites.bankName],
     [ru.dealDetail.requisitesBankAddress, requisites.bankAddress],
     [ru.dealDetail.requisitesBik, requisites.bic],
     [ru.dealDetail.requisitesBankSwift, requisites.bankSwift],
+    [ru.dealDetail.requisitesAccount, requisites.recipientAccount],
+    [
+      ru.dealDetail.requisitesBeneficiaryAccount,
+      requisites.account !== requisites.recipientAccount ? requisites.account : undefined,
+    ],
+    [ru.dealDetail.requisitesRecipient, requisites.recipientName],
+    [ru.dealDetail.requisitesRecipientAddress, requisites.recipientAddress],
+    [ru.dealDetail.requisitesCorrAccount, requisites.correspondentAccount],
     [ru.dealDetail.requisitesCorrespondentBank, requisites.correspondentBankName],
     [ru.dealDetail.requisitesCorrespondentAddress, requisites.correspondentBankAddress],
     [ru.dealDetail.requisitesCorrespondentSwift, requisites.correspondentBankSwift],

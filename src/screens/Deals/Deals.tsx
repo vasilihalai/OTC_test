@@ -11,7 +11,6 @@ import type { Deal } from '@/api/index.ts';
 import { useRequireSession } from '@/store/session.ts';
 import { type DealFilter, matchesFilter } from '@/lib/dealStatus.ts';
 import { usePolling } from '@/lib/usePolling.ts';
-import { useRealtimeEvent } from '@/lib/useRealtime.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './Deals.css';
@@ -36,13 +35,8 @@ export function Deals() {
     void load();
   }, []);
 
-  // Real mode only. Status notifications refresh the list at once; polling covers missed ones.
+  // §7.7 — real mode only, the list has no server push to lean on instead.
   usePolling(() => void load(), 30_000, USE_REAL_API);
-  useRealtimeEvent((event) => {
-    if (event.type === 'operation-status') {
-      void load();
-    }
-  });
 
   const filteredDeals = (deals ?? []).filter((deal) => matchesFilter(deal.status, filter));
 

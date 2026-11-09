@@ -16,10 +16,9 @@ import * as realOtc from '@/api/real/otc.ts';
 import * as mockWithdrawals from '@/api/mock/withdrawals.mock.ts';
 import * as realWithdrawals from '@/api/real/withdrawals.ts';
 import * as realTransfers from '@/api/real/transfers.ts';
-import * as realRealtime from '@/api/real/realtime.ts';
 import { authenticateMiniApp } from '@/api/real/miniAppAuth.ts';
 import { ApiError } from '@/api/http.ts';
-import { refreshTokens, saveAccessToken } from '@/api/real/http/tokenStore.ts';
+import { saveAccessToken } from '@/api/real/http/tokenStore.ts';
 import { getFreshInitData } from '@/telegram/initData.ts';
 import type { Session } from '@/api/types.ts';
 
@@ -227,23 +226,6 @@ export { DocumentUnavailableError } from '@/api/real/otc.ts';
 // TOPUP (expired new terms) on its own.
 export const expireQuote = mockActions.expireQuote;
 export const setDepositBalanceForTesting = mockActions.setDepositBalanceForTesting;
-
-// Realtime (BRCE-4023 §9) — real mode only; mock mode has nothing to push.
-const nothingToStart = (): Promise<void> => Promise.resolve();
-export const startRealtime = USE_REAL_API ? realRealtime.startRealtime : nothingToStart;
-export const stopRealtime = USE_REAL_API ? realRealtime.stopRealtime : nothingToStart;
-export const subscribeRealtime = USE_REAL_API ? realRealtime.subscribeRealtime : () => () => undefined;
-export const subscribeRealtimeConnection = USE_REAL_API ? realRealtime.subscribeRealtimeConnection : () => () => undefined;
-export const isRealtimeConnected = USE_REAL_API ? realRealtime.isRealtimeConnected : () => false;
-export type { RealtimeEvent } from '@/api/real/realtime.ts';
-export const invalidateUser = USE_REAL_API ? realProfile.invalidateUser : () => undefined;
-
-/** A new access token, e.g. after the verification level changed — the old token keeps the old `level`. */
-export async function reissueToken(): Promise<void> {
-  if (USE_REAL_API) {
-    await refreshTokens();
-  }
-}
 
 export { ApiError } from '@/api/http.ts';
 export { mapApiError } from '@/api/real/errorMap.ts';
