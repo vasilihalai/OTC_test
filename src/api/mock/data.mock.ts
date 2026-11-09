@@ -13,8 +13,9 @@ import type {
 } from '@/api/types.ts';
 import {
   MOCK_ASSETS,
-  MOCK_REQUISITES_CRYPTO,
+  MOCK_CRYPTO_DEPOSIT,
   MOCK_REQUISITES_FIAT,
+  MOCK_REQUISITES_FIAT_SWIFT,
   MOCK_SAVED_REQUISITES,
   MOCK_STATS,
   MOCK_USD_RATES,
@@ -51,13 +52,19 @@ export async function getDealById(id: string): Promise<Deal | undefined> {
   return findDeal(id);
 }
 
+/** Like the requisites method: fiat — the operator's account (SWIFT for USD), crypto — the deposit address. */
 export async function getRequisites(id: string): Promise<Requisites | undefined> {
   await mockDelay();
   const deal = findDeal(id);
   if (!deal) {
     return undefined;
   }
-  return isFiatTicker(deal.ticker) ? MOCK_REQUISITES_FIAT : MOCK_REQUISITES_CRYPTO;
+  if (isFiatTicker(deal.ticker)) {
+    const requisites = deal.ticker === 'USD' ? MOCK_REQUISITES_FIAT_SWIFT : MOCK_REQUISITES_FIAT;
+    return { ...requisites, purpose: requisites.purpose?.replace('{requestNumber}', deal.requestNumber ?? deal.id) };
+  }
+  const deposit = MOCK_CRYPTO_DEPOSIT[deal.ticker];
+  return deposit ? { kind: 'crypto', asset: deal.ticker, ...deposit } : undefined;
 }
 
 export async function getAssets(group: AssetGroup): Promise<Asset[]> {

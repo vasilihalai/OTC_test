@@ -1,9 +1,7 @@
-import type { ClientType, SecurityLevel, User } from '@/api/types.ts';
+import type { ClientType, OtcAccessReason, SecurityLevel, User } from '@/api/types.ts';
 import { apiFetch } from '@/api/http.ts';
-import { getOtcAccess } from '@/api/real/otc.ts';
-import { ensureFreshAccessToken } from '@/api/real/http/tokenStore.ts';
+import { getOtcAccessReason, tokenClaims } from '@/api/real/access.ts';
 import { cacheByToken } from '@/api/real/http/cache.ts';
-import { toOtcAccessReason } from '@/lib/otcAccess.ts';
 import { describeShape } from '@/api/real/http/responseShape.ts';
 
 type AccountType = 'INDIVIDUAL' | 'BUSINESS';
@@ -23,15 +21,6 @@ interface ProfileDetails {
 async function fetchUsers<T>(path: string): Promise<Partial<T>> {
   const body = await apiFetch<({ result?: Partial<T> } & Partial<T>) | null>(path, {}, false, 'userAccount');
   return body?.result ?? body ?? {};
-}
-
-/** Backend-confirmed: the token's `accountType` claim is the source of truth for individual vs business. */
-async function tokenAccountType(): Promise<AccountType> {
-  const payload = (await ensureFreshAccessToken())?.split('.')[1];
-  const claims = payload
-    ? JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { accountType?: unknown }
-    : {};
-  return claims.accountType === 'BUSINESS' ? 'BUSINESS' : 'INDIVIDUAL';
 }
 
 const phoneOf = (code?: string, number?: string) => [code, number].filter(Boolean).join(' ');
@@ -61,28 +50,32 @@ async function fetchIndividualDetails(): Promise<ProfileDetails> {
   };
 }
 
+interface BusinessContact {
+  email?: string;
+  userPublicId?: string;
+  securityLevel?: SecurityLevel;
+  phoneCode?: string;
+  phoneNumber?: string;
+}
+
 /**
- * `GET /secured/business-accounts/profile`. Only `companyInfo.name` is confirmed; the contact
- * fields are read where the individual profile has them, and the field names are logged when
- * they're missing so the real ones can be wired in.
+ * `GET /secured/business-accounts/profile`: the contact fields live in `userProfile`, the company in
+ * `companyInfo` (BRCE-4023 §8).
  */
 async function fetchBusinessDetails(): Promise<ProfileDetails> {
   const profile = await fetchUsers<{
+    userProfile: BusinessContact;
     companyInfo: { name?: string };
-    email: string;
-    userPublicId: string;
-    securityLevel: SecurityLevel;
-    phoneCode: string;
-    phoneNumber: string;
   }>('/secured/business-accounts/profile');
-  if (!profile.email || !profile.userPublicId) {
+  const contact = profile.userProfile ?? {};
+  if (!contact.email || !contact.userPublicId) {
     console.warn('[profile] business profile fields:', describeShape(profile));
   }
   return {
-    email: profile.email ?? '',
-    userPublicId: profile.userPublicId ?? '',
-    phone: phoneOf(profile.phoneCode, profile.phoneNumber),
-    securityLevel: profile.securityLevel ?? 'LOW',
+    email: contact.email ?? '',
+    userPublicId: contact.userPublicId ?? '',
+    phone: phoneOf(contact.phoneCode, contact.phoneNumber),
+    securityLevel: contact.securityLevel ?? 'LOW',
     fallbackName: profile.companyInfo?.name ?? '',
   };
 }
@@ -104,39 +97,48 @@ export function getUser(_clientType: ClientType): Promise<User> {
   return userCache.get();
 }
 
-// §3: "There is no `verified: boolean` in the contract" — derived from `/v1/otc/access`'s
-// `enabled` flag instead (question B6).
+/** After the verification level changes: the next read asks again. */
+export function invalidateUser(): void {
+  userCache.invalidate();
+}
+
+/**
+ * The verified badge reads the token's `level` (BRCE-4023 §8). The OTC gate's failure must not take the
+ * profile down: unknown access falls back to GRANTED, since the backend still enforces access on every
+ * OTC call while a wrong NOT_ELIGIBLE would lock the user out.
+ */
 async function loadUser(): Promise<User> {
-  const accountType = await tokenAccountType();
-  const [details, name, access] = await Promise.all([
+  const claims = await tokenClaims();
+  const accountType: AccountType = claims.accountType === 'BUSINESS' ? 'BUSINESS' : 'INDIVIDUAL';
+  if (claims.level === undefined) {
+    console.warn('[profile] the token has no level claim — verification is read from the OTC gate only');
+  }
+  const [details, name, otcAccess] = await Promise.all([
     accountType === 'BUSINESS' ? fetchBusinessDetails() : fetchIndividualDetails(),
     fetchDisplayName().catch((err: unknown) => {
       console.error('[profile] short-profile failed', err);
       return '';
     }),
-    // Only feeds the verified badge and the OTC gate — a failure here must not take the
-    // whole profile down. Unknown access falls back to GRANTED: the backend still enforces
-    // OTC access on every OTC call, while a wrong NOT_ELIGIBLE would lock the user out.
-    getOtcAccess().catch((err: unknown) => {
+    getOtcAccessReason(claims.level).catch((err: unknown): OtcAccessReason => {
       console.error('[profile] OTC access check failed', err);
-      return undefined;
+      return 'GRANTED';
     }),
   ]);
 
   return {
     clientName: name || details.fallbackName,
     clientType: accountType === 'BUSINESS' ? 'UL' : 'FL',
-    verified: access?.enabled ?? false,
+    verified: claims.level !== undefined ? claims.level > 0 : otcAccess === 'GRANTED',
     securityLevel: details.securityLevel,
-    otcAccess: access ? toOtcAccessReason(access) : 'GRANTED',
+    otcAccess,
     email: details.email,
     phone: details.phone,
     userId: details.userPublicId,
     // Not present anywhere in api-integration.md's field mapping (§3) — the
     // profile endpoint doesn't carry them, and nothing in the doc says where
     // else they'd come from. Left empty rather than guessed; Profile's
-    // certificate/support/FAQ/about links will silently no-op until these
-    // have real values. Flag with the backend.
+    // support/FAQ/about links will silently no-op until these have real
+    // values. Flag with the backend.
     supportUrl: '',
     faqUrl: '',
     aboutUrl: '',

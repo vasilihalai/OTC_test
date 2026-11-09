@@ -16,6 +16,7 @@ import type { Asset, AssetGroup, Deal, Stats, User } from '@/api/index.ts';
 import { useRequireOtcAccess, useRequireSession } from '@/store/session.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { formatAmount } from '@/lib/money.ts';
+import { useRealtimeEvent } from '@/lib/useRealtime.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './Home.css';
@@ -74,6 +75,14 @@ export function Home() {
   useEffect(() => {
     loadAssets();
   }, [loadAssets, balancesVersion]);
+
+  // A deal changed status: the recent deals and the active count may have moved with it.
+  useRealtimeEvent((event) => {
+    if (event.type === 'operation-status') {
+      void getStats().then(setStats).catch(() => undefined);
+      void getDeals().then(setDeals).catch(() => undefined);
+    }
+  });
 
   function retry() {
     setLoadFailed(false);

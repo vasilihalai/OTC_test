@@ -13,18 +13,11 @@ export interface Session {
 }
 
 /**
- * `DESK_CLOSED` is new — api-integration.md §7.1: `available === false` with
- * `enabled === true` "most likely means OTC is on for you but the desk is
- * closed," a state the old 3-way model had no room for (question B9).
+ * BRCE-4023 §8, checked in this order: `level` 0 in the token → VERIFICATION_REQUIRED;
+ * `GET /v1/features/availability` row `OTC` with `USER_RESTRICTED` → NOT_ELIGIBLE, with
+ * `SYSTEM_DISABLED` → DESK_CLOSED; available and `OTC_ENABLED` in `GET /v1/features/access` → GRANTED.
  */
 export type OtcAccessReason = 'GRANTED' | 'VERIFICATION_REQUIRED' | 'DESK_CLOSED' | 'NOT_ELIGIBLE';
-
-/** `GET /v1/otc/access` — api-integration.md §7.1. */
-export interface OtcAccessResult {
-  enabled: boolean;
-  available: boolean;
-  reasons: string[];
-}
 
 /** How the account is protected — not its verification status. */
 export type SecurityLevel = 'LOW' | 'MEDIUM' | 'HIGH';
@@ -51,33 +44,62 @@ export interface Stats {
   volumeAsset: string;
 }
 
+/**
+ * What the client sees, one value per screen. The backend status behind each one
+ * (BRCE-4023 §2) is mapped in `lib/otcStatus.ts`.
+ */
 export type DealStatus =
+  /** `QUOTING`, `REQUOTE`: no rate yet, or the client asked for a new one. */
   | 'RATE_PENDING'
+  /** `QUOTED` without `previousRate`: the first quote, with a timer. */
   | 'RATE_ACTIVE'
+  /** `QUOTED` with `previousRate` (or legacy `PROPOSED`): the operator changed the amount and/or rate before the hold. */
+  | 'TERMS_PROPOSED'
+  /** `EXPIRED`. */
   | 'RATE_STALE'
+  /** `TOPUP`, `CHECKING`: top up the deposit account and confirm the hold. */
   | 'AWAITING_FUNDS'
+  /** `REPRICE` without `proposedRate`: less than the deal was frozen, the operator decides. */
+  | 'SHORTFALL_REVIEW'
+  /** `REPRICE` with `proposedRate`: the operator offers a new rate on the frozen amount. */
+  | 'REPRICE_PROPOSED'
+  /** `HOLD`. */
   | 'RUNNING'
+  /** `EXECUTED`. */
   | 'DONE'
-  | 'DECLINED'
-  /**
-   * api-integration.md §7.6 — the backend's `REQUOTE` status, which the
-   * design never accounted for: "the operator renegotiates terms," with no
-   * accept/reject screen built yet (question B11's own honest MVP call:
-   * read-only `StatusHero` + Cancel, nothing more, until the two missing
-   * screens — accept/reject amount, accept/reject reprice — get designed).
-   */
-  | 'RATE_RENEGOTIATING';
+  /** `CANCELED`, `ERROR`. */
+  | 'DECLINED';
 
 export type DealDirection = 'BUY' | 'SELL' | 'EXCHANGE';
 
-/** The three client-facing documents of a deal (BRD FR-7). */
+/**
+ * Client-facing deal documents (BRD FR-7). The backend sends `PAYMENT_INSTRUCTION` → `payment` and
+ * `EXECUTION_ACT` → `certificate`; there is no separate acceptance document (BRCE-4023 §7, decision Р2),
+ * so `accept` only shows up if the backend ever sends one.
+ */
 export type DealDocumentKind = 'accept' | 'payment' | 'certificate';
 
-/** `GET /otc/deals/{id}/documents` (§7.5), or embedded in `OtcOperationDetails` — preferred when present, to save a round trip. */
+/** `documents[]` of `GET /v1/otc/deals/{id}`. */
 export interface DealDocument {
   kind: DealDocumentKind;
+  /** A full signed link when `hrefExpiresAt` is set; otherwise a gateway path that needs the session token. */
   href?: string;
+  /** ISO timestamp — when the signed `href` stops working. */
+  hrefExpiresAt?: string;
   available: boolean;
+  /** The backend's `availabilityHint` code, translated on screen. */
+  hint?: string;
+}
+
+/** One side of a deal's terms, ready to show. */
+export interface DealTerms {
+  /** e.g. `5 000 000 KGS`. */
+  from: string;
+  to: string | null;
+  /** e.g. `1 USDT = 87.45 KGS`. */
+  rate: string | null;
+  ratePerUnit?: string;
+  rateUnitLabel?: string;
 }
 
 export interface Deal {
@@ -96,19 +118,37 @@ export interface Deal {
   /** Quote-card fields — only meaningful while `status === 'RATE_ACTIVE'`. */
   ratePerUnit?: string;
   rateUnitLabel?: string;
-  /** ISO timestamp — the quote card counts down to this and flips to RATE_STALE at zero. */
-  quoteExpiresAt?: string;
   /**
-   * Real mode only, AWAITING_FUNDS — §7.4: "the client no longer computes
-   * the shortfall," these arrive pre-computed. `undefined` in mock mode,
-   * which still computes them client-side from `getAccounts()` (unchanged).
+   * ISO timestamp — the quote card counts down to this. Only meaningful for RATE_ACTIVE and
+   * TERMS_PROPOSED: after the quote is accepted it is not a top-up deadline (BRCE-4023 §4, Р1).
+   */
+  quoteExpiresAt?: string;
+  /** Ticker of the asset the client receives. */
+  toTicker?: string;
+  /** Plain decimal of `from`, for the balance math. */
+  amount?: string;
+  /**
+   * Real mode, from the deal card: the available balance in `ticker` on the deposit account
+   * (`UNIFIED`), what it lacks against the deal, and the deal's minimum (BRCE-4023 §5).
    */
   balance?: string;
   missingAmount?: string;
-  /** Real mode only — from the detail response, preferred over a separate documents call (§7.5). `undefined` in mock mode, which still uses the static per-status table in `lib/dealStatus.ts`. */
+  /** Plain decimal in `ticker`; the hold is blocked when the shortfall is over 1% and the balance is not above it. */
+  minAmount?: string;
+  /** What is actually debited and credited: after a ≤1% recalculation or a partial hold. Display strings. */
+  actualFrom?: string;
+  actualTo?: string;
+  /** The frozen amount, display string. */
+  holdAmount?: string;
+  /** TERMS_PROPOSED: the agreed terms the operator's proposal would replace (`previous*`). */
+  previous?: DealTerms;
+  /** REPRICE_PROPOSED: the operator's new rate on the frozen amount and what it gives. */
+  reprice?: DealTerms;
+  /** SHORTFALL_REVIEW after the client rejected the operator's new rate (`repriceOutcome = REJECTED`). */
+  repriceRejected?: boolean;
+  /** Legacy `PROPOSED` deals answer with ACCEPT_AMOUNT/REJECT_AMOUNT instead of ACCEPT_QUOTE/REJECT_QUOTE. */
+  legacyProposal?: boolean;
   documents?: DealDocument[];
-  /** Real mode only — free-form Camunda status string (§7.4), logged/kept on the model but not switched on in the UI yet (question B10). */
-  detailsStatus?: string;
 }
 
 export type AssetGroup = 'crypto' | 'fiat';
@@ -265,17 +305,28 @@ export interface Accounts {
   trading: Record<string, string>;
 }
 
+/**
+ * `GET /v1/otc/deals/{id}/requisites`, `kind: FIAT` (BRCE-4023 §1): the account the operator chose in
+ * CRM, or the auto-picked one when `title` is absent. Any field may be missing; empty ones aren't shown.
+ */
 export interface FiatRequisites {
   kind: 'fiat';
-  companyName: string;
-  bank: string;
-  bankAddress: string;
-  bik: string;
-  account: string;
-  recipient: string;
-  recipientAddress: string;
-  corrAccount: string;
-  purpose: string;
+  title?: string;
+  purpose?: string;
+  recipientName?: string;
+  recipientAddress?: string;
+  recipientAccount?: string;
+  account?: string;
+  bankName?: string;
+  bankAddress?: string;
+  bic?: string;
+  bankSwift?: string;
+  correspondentBankName?: string;
+  correspondentBankAddress?: string;
+  correspondentBankSwift?: string;
+  intermediaryBankName?: string;
+  intermediaryBankAddress?: string;
+  intermediaryBankSwift?: string;
 }
 
 export interface CryptoRequisites {

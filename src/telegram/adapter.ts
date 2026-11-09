@@ -1,4 +1,12 @@
-import { copyTextToClipboard, hapticFeedback, miniApp, openLink, retrieveLaunchParams } from '@tma.js/sdk-react';
+import {
+  AccessDeniedError,
+  copyTextToClipboard,
+  downloadFile,
+  hapticFeedback,
+  miniApp,
+  openLink,
+  retrieveLaunchParams,
+} from '@tma.js/sdk-react';
 
 import { isRealTelegram } from '@/telegram/environment.ts';
 
@@ -39,6 +47,28 @@ export function openExternalLink(url: string): void {
     }
   }
   window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+/**
+ * A signed document link (BRCE-4023 §7): it opens without a token and answers with
+ * `Content-Disposition: attachment`. Telegram 8.0+ downloads it through its own popup without
+ * leaving the app; older clients and plain browsers get the link opened instead. The user
+ * declining the popup is not an error.
+ */
+export async function openSignedLink(url: string, fileName: string): Promise<void> {
+  if (isRealTelegram && downloadFile.isAvailable()) {
+    try {
+      await downloadFile(url, fileName);
+    } catch (err) {
+      if (err instanceof AccessDeniedError) {
+        return;
+      }
+      console.warn('[telegram] downloadFile failed, opening the link instead', err);
+      openExternalLink(url);
+    }
+    return;
+  }
+  openExternalLink(url);
 }
 
 /** Whether `window.open` gives a real browser tab here: native Telegram clients have no tabs to put a blob: URL in. */

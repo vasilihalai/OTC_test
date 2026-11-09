@@ -6,6 +6,14 @@
   color: var(--text-body);
 }
 
+/* The account the operator chose, e.g. «Бакай, SWIFT USD»: absent when it was picked automatically. */
+.requisites-panel__account-title {
+  margin: -12px 0 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-muted);
+}
+
 .requisites-panel__row {
   display: flex;
   flex-direction: column;

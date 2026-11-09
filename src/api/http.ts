@@ -11,6 +11,24 @@ function requestId(): string {
 }
 
 /**
+ * The caller's `x-request-id`, when it passed one. It is the backend's idempotency key (BRCE-4023 §6):
+ * a retry of the same action must reuse it, a new action must not.
+ */
+function requestIdFrom(init: RequestInit): string | undefined {
+  const headers = init.headers;
+  if (!headers) {
+    return undefined;
+  }
+  if (headers instanceof Headers) {
+    return headers.get('x-request-id') ?? undefined;
+  }
+  if (Array.isArray(headers)) {
+    return headers.find(([name]) => name.toLowerCase() === 'x-request-id')?.[1];
+  }
+  return Object.entries(headers).find(([name]) => name.toLowerCase() === 'x-request-id')?.[1];
+}
+
+/**
  * Thin fetch wrapper for the real exchange API: resolves `path` against the
  * given `service`'s base URL + prefix (`servicePaths.ts`, §1.1 — defaults to
  * `financial` since most of this codebase's not-yet-migrated real/* callers
@@ -23,7 +41,7 @@ function requestId(): string {
  */
 async function rawFetch(path: string, init: RequestInit, isRetry: boolean, service: Service): Promise<Response> {
   const token = await ensureFreshAccessToken();
-  const reqId = requestId();
+  const reqId = requestIdFrom(init) ?? requestId();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -36,7 +54,7 @@ async function rawFetch(path: string, init: RequestInit, isRetry: boolean, servi
 
   const res = await fetch(serviceUrl(service, path), {
     ...init,
-    headers: { ...headers, ...init.headers },
+    headers: { ...headers, ...init.headers, 'x-request-id': reqId },
   });
 
   // Logged alongside the response so a failed request can be traced by

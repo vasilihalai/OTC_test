@@ -110,6 +110,26 @@
   color: var(--positive);
 }
 
+/* New terms and a new rate: what is being replaced reads quieter than what replaces it. */
+.quote-card__was {
+  color: var(--text-muted);
+}
+
+.quote-card__new {
+  font-weight: 600;
+  color: var(--text-body);
+}
+
+/* The new-terms card has no big rate above its timer, so the timer sits right under the intro line. */
+.quote-card__countdown--top {
+  margin-top: -4px;
+}
+
+/* The new-rate card has no timer between the rate and its rows. */
+.quote-card__rows--spaced {
+  margin-top: 16px;
+}
+
 .quote-card .button {
   width: 100%;
 }

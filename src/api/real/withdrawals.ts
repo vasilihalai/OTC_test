@@ -1,7 +1,6 @@
 import type {
   CryptoWithdrawOptions,
   FiatWithdrawOptions,
-  Requisites,
   RequisitesPayload,
   SavedRequisite,
   WithdrawMethod,
@@ -14,11 +13,6 @@ import { apiFetch } from '@/api/http.ts';
 import { cacheByToken } from '@/api/real/http/cache.ts';
 import { describeShape } from '@/api/real/http/responseShape.ts';
 import { paymentTypeMeta } from '@/lib/paymentType.ts';
-
-/** Payment requisites to fund a specific deal — id is a deal id, not a withdrawal. */
-export async function getRequisites(dealId: string): Promise<Requisites | undefined> {
-  return apiFetch<Requisites | undefined>(`/deals/${dealId}/requisites`);
-}
 
 /** `GET /requisite/list` — §5.4, grouped saved bank requisites for the withdrawal requisites selector. */
 export async function getSavedRequisites(): Promise<SavedRequisite[]> {
@@ -184,10 +178,37 @@ export async function issueWithdrawOtp(transactionId: string): Promise<WithdrawO
   return res.result;
 }
 
+const CONFIRM_POLLS = 15;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * `POST /v2/operations/confirm/{id}`, idempotent by `x-request-id` (BRCE-4023 §6). While the server is
+ * still working it answers 202 with no `result`: the same request is repeated with the same id, and so
+ * is one that never got an answer. Every new code is a new attempt with a new id — reusing one would
+ * replay the stored rejection for two minutes. If the result never shows up, the withdrawal was still
+ * accepted, so it's reported without an id.
+ */
 export async function confirmWithdrawOtp(transactionId: string, otp: string, requisites?: object): Promise<WithdrawalResult> {
-  const res = await apiFetch<{ result: WithdrawalResult }>(`/v2/operations/confirm/${transactionId}`, {
+  const requestId = crypto.randomUUID();
+  const init: RequestInit = {
     method: 'POST',
     body: JSON.stringify({ otp, requisites }),
-  }, false, 'financial');
-  return res.result;
+    headers: { 'x-request-id': requestId },
+  };
+  for (let poll = 0; poll < CONFIRM_POLLS; poll += 1) {
+    let res: { result?: WithdrawalResult } | undefined;
+    try {
+      res = await apiFetch<{ result?: WithdrawalResult } | undefined>(`/v2/operations/confirm/${transactionId}`, init, false, 'financial');
+    } catch (err) {
+      if (!(err instanceof TypeError) || poll > 0) {
+        throw err;
+      }
+    }
+    if (res?.result) {
+      return res.result;
+    }
+    await sleep(1000);
+  }
+  console.warn('[withdraw] confirm still processing after polling', transactionId);
+  return { id: '', status: 'PENDING' };
 }

@@ -1,33 +1,50 @@
 import type { DealStatus } from '@/api/types.ts';
 
-/** `StatusEnum` from `POST /otc/deals`/`GET /otc/deals/{id}` — api-integration.md §7.6. */
+/**
+ * `StatusEnum` of `POST /v1/otc/deals` and `GET /v1/otc/deals/{id}` (BRCE-4023 §2). The state of a deal
+ * lives in `status`; `detailsStatus` is a deprecated mirror and is not read. `INITIALIZED`, `PENDING`,
+ * `ACTIVE`, `ACCEPTED` and `PROPOSED` are left from the contract before BRCE-3450: only deals that got
+ * stuck in them before 02.10 can still carry them.
+ */
 export type OtcRealStatus =
-  | 'INITIALIZED' | 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'ACCEPTED'
-  | 'REQUOTE' | 'HOLD' | 'EXECUTED' | 'CANCELED' | 'ERROR';
+  | 'QUOTING' | 'QUOTED' | 'EXPIRED' | 'REQUOTE' | 'TOPUP' | 'CHECKING' | 'REPRICE'
+  | 'HOLD' | 'EXECUTED' | 'CANCELED' | 'ERROR'
+  | 'PROPOSED' | 'INITIALIZED' | 'PENDING' | 'ACTIVE' | 'ACCEPTED';
+
+/** The card fields that split one backend status into two screens. The list doesn't carry them. */
+export interface OtcStatusDetails {
+  previousRate?: string | null;
+  proposedRate?: string | null;
+}
 
 /**
- * §7.6's own proposed status→UI mapping table — explicitly marked
- * "assumption, must be confirmed" (question B11) in the source doc, but
- * given as a concrete table to implement, not left open. A status this
- * doesn't recognize (a real 10th value, or a typo somewhere) renders
- * read-only rather than actionable — per the doc's own words: "an
- * unrecognised state that offers a button is how a client accepts something
- * nobody intended." Exhaustive over `OtcRealStatus`, so TypeScript forces
- * every future backend addition through here before it can compile.
+ * Backend status → screen. `QUOTED` is the first quote unless `previousRate` says the operator changed
+ * the terms after the quote was accepted; `REPRICE` waits for the operator unless `proposedRate` carries
+ * a new rate for the client to accept. Without details (the deals list) both fall back to their first
+ * meaning. A status this doesn't know renders read-only: a button on an unknown state is how a client
+ * accepts something nobody intended.
  */
-export function mapOtcStatus(status: OtcRealStatus): DealStatus {
+export function mapOtcStatus(status: OtcRealStatus, details: OtcStatusDetails = {}): DealStatus {
   switch (status) {
+    case 'QUOTING':
+    case 'REQUOTE':
     case 'INITIALIZED':
     case 'PENDING':
       return 'RATE_PENDING';
+    case 'QUOTED':
+      return details.previousRate ? 'TERMS_PROPOSED' : 'RATE_ACTIVE';
     case 'ACTIVE':
       return 'RATE_ACTIVE';
+    case 'PROPOSED':
+      return 'TERMS_PROPOSED';
     case 'EXPIRED':
       return 'RATE_STALE';
+    case 'TOPUP':
+    case 'CHECKING':
     case 'ACCEPTED':
       return 'AWAITING_FUNDS';
-    case 'REQUOTE':
-      return 'RATE_RENEGOTIATING';
+    case 'REPRICE':
+      return details.proposedRate ? 'REPRICE_PROPOSED' : 'SHORTFALL_REVIEW';
     case 'HOLD':
       return 'RUNNING';
     case 'EXECUTED':

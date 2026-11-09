@@ -1,31 +1,35 @@
-import type { OtcAccessReason, OtcAccessResult } from '@/api/types.ts';
+import type { OtcAccessReason } from '@/api/types.ts';
+
+/** The `OTC` row of `GET /v1/features/availability`. */
+export interface OtcAvailability {
+  available: boolean;
+  /** Only when `available` is false: `USER_RESTRICTED` or `SYSTEM_DISABLED`. */
+  reason?: string;
+}
+
+export interface OtcAccessInputs {
+  /** `level` claim of the access token: 0 means no KYC/KYB yet. `undefined` when the token has none. */
+  level?: number;
+  /** `undefined` when the row is missing. */
+  availability?: OtcAvailability;
+  /** `result.features` of `GET /v1/features/access`. */
+  features: string[];
+}
 
 /**
- * `GET /v1/otc/access` (api-integration.md §7.1) doesn't document its
- * `reasons` code vocabulary anywhere in the eight Swagger files — this maps
- * the ones that are guessable from their name to the app's existing
- * verification/not-eligible copy, and falls back to the generic "contact a
- * manager" state for anything unrecognized, per the doc's own instruction.
- * One place to extend once real codes are seen in practice.
+ * BRCE-4023 §8, in the backend's order. The level goes first: without KYC the flag is off by
+ * default, and availability would answer USER_RESTRICTED for the same user.
  */
-const KNOWN_REASONS: Record<string, OtcAccessReason> = {
-  VERIFICATION_REQUIRED: 'VERIFICATION_REQUIRED',
-  KYC_REQUIRED: 'VERIFICATION_REQUIRED',
-  NOT_VERIFIED: 'VERIFICATION_REQUIRED',
-};
-
-export function toOtcAccessReason(access: OtcAccessResult): OtcAccessReason {
-  if (!access.enabled) {
-    for (const reason of access.reasons) {
-      const mapped = KNOWN_REASONS[reason];
-      if (mapped) {
-        return mapped;
-      }
-    }
-    return 'NOT_ELIGIBLE';
+export function toOtcAccessReason({ level, availability, features }: OtcAccessInputs): OtcAccessReason {
+  if (level === 0) {
+    return 'VERIFICATION_REQUIRED';
   }
-  if (!access.available) {
-    return 'DESK_CLOSED';
+  if (availability && !availability.available) {
+    return availability.reason === 'SYSTEM_DISABLED' ? 'DESK_CLOSED' : 'NOT_ELIGIBLE';
   }
-  return 'GRANTED';
+  if (features.includes('OTC_ENABLED')) {
+    return 'GRANTED';
+  }
+  console.warn('[otc] OTC is available but OTC_ENABLED is missing from features', { level, availability, features });
+  return 'NOT_ELIGIBLE';
 }

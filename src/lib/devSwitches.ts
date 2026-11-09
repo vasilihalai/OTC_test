@@ -28,7 +28,7 @@ export function otcAccessOverride(): OtcAccessReason | undefined {
   return undefined;
 }
 
-/** `?scenario=quote_expiring` — the RATE_ACTIVE deal's quote countdown starts at ~10s instead of 5 minutes. */
+/** `?scenario=quote_expiring` — the quote and new-terms timers start at ~10s instead of 5 minutes. */
 export function isQuoteExpiringScenario(): boolean {
   return readHashParam('scenario') === 'quote_expiring';
 }

@@ -51,10 +51,17 @@
   color: var(--status-awaiting-funds-text);
 }
 
-/* Same tone as RATE_PENDING — both read as "the operator is working on it," no dedicated color exists for this real-only status. */
-.status-chip--RATE_RENEGOTIATING {
+/* Same tone as RATE_PENDING — both read as "the operator is working on it"; no frame gives it a color of its own. */
+.status-chip--SHORTFALL_REVIEW {
   background: var(--status-rate-pending-fill);
   color: var(--status-rate-pending-text);
+}
+
+/* Same tone as RATE_ACTIVE — like a quote, the operator's new terms or rate wait for the client's answer. */
+.status-chip--TERMS_PROPOSED,
+.status-chip--REPRICE_PROPOSED {
+  background: var(--status-rate-active-fill);
+  color: var(--status-rate-active-text);
 }
 
 .status-chip--DECLINED {

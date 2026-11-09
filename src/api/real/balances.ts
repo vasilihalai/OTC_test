@@ -89,6 +89,10 @@ const ASSET_NAMES: Record<string, string> = {
   KGS: 'Кыргызский сом', RUB: 'Российский рубль', USD: 'Доллар США',
 };
 
+export function assetName(ticker: string): string {
+  return ASSET_NAMES[ticker] ?? ticker;
+}
+
 export async function getAssets(group: AssetGroup): Promise<Asset[]> {
   const { deposit } = await accountLists.get();
   const wantedType = group.toUpperCase();
@@ -98,7 +102,7 @@ export async function getAssets(group: AssetGroup): Promise<Asset[]> {
     .filter((item) => Number(item.equity) !== 0)
     .map((item) => ({
       ticker: item.coin,
-      name: ASSET_NAMES[item.coin] ?? item.coin,
+      name: assetName(item.coin),
       // §4: the figure shown is the available one, never the total — the total includes
       // whatever an OTC deal has frozen.
       balance: String(item.amount),

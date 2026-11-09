@@ -16,6 +16,9 @@ interface UiStore {
       that read them (deal confirmation, Home, withdrawals) know to refetch. */
   balancesVersion: number;
   bumpBalancesVersion: () => void;
+  /** Bumped when the user's verification level changes, so screens that gate on it look again. */
+  userVersion: number;
+  bumpUserVersion: () => void;
   /** Home's "hide balances under $1" checkbox — the one setting here kept across launches. */
   hideSmallBalances: boolean;
   setHideSmallBalances: (hide: boolean) => void;
@@ -37,6 +40,8 @@ export const useUiStore = create<UiStore>()(
         invalidateBalances();
         set((s) => ({ balancesVersion: s.balancesVersion + 1 }));
       },
+      userVersion: 0,
+      bumpUserVersion: () => set((s) => ({ userVersion: s.userVersion + 1 })),
       hideSmallBalances: false,
       setHideSmallBalances: (hide) => set({ hideSmallBalances: hide }),
     }),

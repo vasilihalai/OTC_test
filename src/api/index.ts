@@ -2,13 +2,8 @@
 // never from `api/mock/*` or `api/real/*` directly, so flipping
 // VITE_USE_REAL_API does not touch a single screen file.
 //
-// Deals are real-API-ready for the five commands that have a built screen
-// (api-integration.md §7.3/§7.4/§7.6) — acceptQuote/rejectQuote/confirmHold/
-// requestNewRate/cancelDeal, below. The other four commands (ACCEPT_AMOUNT/
-// REJECT_AMOUNT/ACCEPT_REPRICE/REJECT_REPRICE) have no screen to call them
-// from — REQUOTE/RATE_RENEGOTIATING is read-only except Cancel, per an
-// explicit "flag it to the analyst, do not improvise them" instruction —
-// see lib/otcStatus.ts.
+// Deals follow the BRCE-4023 contract: every client command has a screen
+// (see the deal actions below and lib/otcStatus.ts).
 import * as mockAuth from '@/api/mock/auth.mock.ts';
 import * as realAuth from '@/api/real/auth.ts';
 import * as mockData from '@/api/mock/data.mock.ts';
@@ -21,10 +16,10 @@ import * as realOtc from '@/api/real/otc.ts';
 import * as mockWithdrawals from '@/api/mock/withdrawals.mock.ts';
 import * as realWithdrawals from '@/api/real/withdrawals.ts';
 import * as realTransfers from '@/api/real/transfers.ts';
-import * as realCertificate from '@/api/real/certificate.ts';
+import * as realRealtime from '@/api/real/realtime.ts';
 import { authenticateMiniApp } from '@/api/real/miniAppAuth.ts';
 import { ApiError } from '@/api/http.ts';
-import { saveAccessToken } from '@/api/real/http/tokenStore.ts';
+import { refreshTokens, saveAccessToken } from '@/api/real/http/tokenStore.ts';
 import { getFreshInitData } from '@/telegram/initData.ts';
 import type { Session } from '@/api/types.ts';
 
@@ -149,67 +144,106 @@ export async function confirmWithdrawOtp(transactionId: string, otp: string, req
 
 export const getStats = USE_REAL_API ? realOtc.getStats : mockData.getStats;
 export const getAccounts = USE_REAL_API ? realBalances.getAccounts : mockData.getAccounts;
-export const getRequisites = USE_REAL_API ? realWithdrawals.getRequisites : mockData.getRequisites;
+/** Deposit requisites of a deal: read once per screen (BRCE-4023 §1). */
+export const getDealRequisites = USE_REAL_API ? realOtc.getDealRequisites : mockData.getRequisites;
 export const getSavedRequisites = USE_REAL_API ? realWithdrawals.getSavedRequisites : mockData.getSavedRequisites;
 export const transfer = USE_REAL_API ? realTransfers.transfer : mockActions.transfer;
 
-// §8. Mock mode just opens the bundled sample PDF directly (Profile.tsx,
-// no loading/error states to simulate for a static file) — genuinely
-// different flows, same precedent as Google/Apple sign-in above, so
-// Profile.tsx branches on USE_REAL_API itself rather than this being a
-// mock/real pair.
-export const getAccountCertificate = realCertificate.getAccountCertificate;
+// The OTC account certificate by a signed link (BRCE-4023 §7). Mock mode
+// opens the bundled sample PDF directly in Profile.tsx instead.
+export const openAccountCertificate = realOtc.openAccountCertificate;
 
 // Read side — real as of this round (§7.3/§7.4), see the top-of-file note.
 export const getDeals = USE_REAL_API ? realOtc.getDeals : mockData.getDeals;
 export const getDealById = USE_REAL_API ? realOtc.getDealById : mockData.getDealById;
 
-// Write side — §7.6. Named for the UI action, not the raw command, since
-// one button can imply different commands depending which screen it's on
-// (both RATE_ACTIVE's and AWAITING_FUNDS's "Отклонить" are REJECT_QUOTE;
-// RATE_PENDING's and RATE_RENEGOTIATING's "Отменить заявку" are CANCEL —
-// two visually-identical buttons, two different real commands).
+// Write side. Named for the UI action, not the raw command: the same button
+// sends different commands on different screens (BRCE-4023 §2).
 
-/** RATE_ACTIVE's "Подтвердить сделку". */
-export async function acceptQuote(dealId: string): Promise<Deal | undefined> {
-  return USE_REAL_API ? realOtc.sendOtcCommand(dealId, 'ACCEPT_QUOTE') : mockActions.confirmDeal(dealId, { status: 'RUNNING' });
+/** RATE_ACTIVE's "Подтвердить сделку" — ACCEPT_QUOTE; the deal moves to TOPUP at once. */
+export async function acceptQuote(deal: Deal): Promise<Deal | undefined> {
+  return USE_REAL_API ? realOtc.sendOtcCommand(deal, 'ACCEPT_QUOTE') : mockActions.acceptQuote(deal.id);
 }
 
-/** RATE_ACTIVE's and AWAITING_FUNDS's "Отклонить" — both map to REJECT_QUOTE (§7.6's table). */
-export async function rejectQuote(dealId: string): Promise<Deal | undefined> {
-  return USE_REAL_API ? realOtc.sendOtcCommand(dealId, 'REJECT_QUOTE') : mockActions.declineDeal(dealId);
+/** RATE_ACTIVE's "Отклонить" — REJECT_QUOTE on the first quote cancels the deal. */
+export async function rejectQuote(deal: Deal): Promise<Deal | undefined> {
+  return USE_REAL_API ? realOtc.sendOtcCommand(deal, 'REJECT_QUOTE') : mockActions.declineDeal(deal.id);
 }
 
 /**
- * AWAITING_FUNDS's "Подтвердить сделку" (all three non-belowmin branches).
- * Real: a single `CONFIRM_HOLD` — the server decides whether the result is
- * `RUNNING` or a `REQUOTE` renegotiation based on what was actually frozen,
- * so there's nothing to compute client-side; the refetch after the command
- * picks up whichever it was. Mock: no server logic to simulate that
- * decision, so it still needs the branch-computed patch passed in.
+ * TERMS_PROPOSED's accept. The server reads ACCEPT_QUOTE on a QUOTED proposal as the answer to the new
+ * terms; legacy PROPOSED deals take ACCEPT_AMOUNT. Back to the top-up screen with the new terms.
  */
-export async function confirmHold(dealId: string, mockPatch: ConfirmDealPatch): Promise<Deal | undefined> {
-  return USE_REAL_API ? realOtc.sendOtcCommand(dealId, 'CONFIRM_HOLD') : mockActions.confirmDeal(dealId, mockPatch);
+export async function acceptTerms(deal: Deal): Promise<Deal | undefined> {
+  return USE_REAL_API
+    ? realOtc.sendOtcCommand(deal, deal.legacyProposal ? 'ACCEPT_AMOUNT' : 'ACCEPT_QUOTE')
+    : mockActions.acceptTerms(deal.id);
 }
 
-/** RATE_STALE's "Запросить новый курс" — back to waiting for the operator's quote (scenario С-08). */
-export async function requestNewRate(dealId: string): Promise<Deal | undefined> {
-  return USE_REAL_API ? realOtc.requestNewRate(dealId) : mockActions.requestNewRate(dealId);
+/** TERMS_PROPOSED's decline: back to the top-up screen with the previous terms, the deal stays. */
+export async function rejectTerms(deal: Deal): Promise<Deal | undefined> {
+  return USE_REAL_API
+    ? realOtc.sendOtcCommand(deal, deal.legacyProposal ? 'REJECT_AMOUNT' : 'REJECT_QUOTE')
+    : mockActions.rejectTerms(deal.id);
+}
+
+/**
+ * AWAITING_FUNDS's "Подтвердить сделку" — CONFIRM_HOLD. The server picks the branch from the balance at
+ * that moment (enough, ≤1% short, partial hold); the mock has no server, so it takes the patch the
+ * screen computed.
+ */
+export async function confirmHold(deal: Deal, mockPatch: ConfirmDealPatch): Promise<Deal | undefined> {
+  return USE_REAL_API ? realOtc.sendOtcCommand(deal, 'CONFIRM_HOLD') : mockActions.confirmDeal(deal.id, mockPatch);
+}
+
+/** RATE_STALE's "Запросить новый курс" — REQUEST_NEW_RATE, the deal waits for the operator again (REQUOTE). */
+export async function requestNewRate(deal: Deal): Promise<Deal | undefined> {
+  return USE_REAL_API ? realOtc.requestNewRate(deal) : mockActions.requestNewRate(deal.id);
+}
+
+/** REPRICE_PROPOSED's accept — the deal goes to HOLD at the new rate. */
+export async function acceptReprice(deal: Deal): Promise<Deal | undefined> {
+  return USE_REAL_API ? realOtc.sendOtcCommand(deal, 'ACCEPT_REPRICE') : mockActions.acceptReprice(deal.id);
+}
+
+/** REPRICE_PROPOSED's decline — back to the operator's decision on the shortfall. */
+export async function rejectReprice(deal: Deal): Promise<Deal | undefined> {
+  return USE_REAL_API ? realOtc.sendOtcCommand(deal, 'REJECT_REPRICE') : mockActions.rejectReprice(deal.id);
+}
+
+/**
+ * CANCEL: "Отменить заявку" while the operator works (RATE_PENDING, SHORTFALL_REVIEW) and the top-up
+ * screen's "Отклонить" — REJECT_QUOTE there would get 409. A frozen amount is released.
+ */
+export async function cancelDeal(deal: Deal): Promise<Deal | undefined> {
+  return USE_REAL_API ? realOtc.sendOtcCommand(deal, 'CANCEL') : mockActions.declineDeal(deal.id);
 }
 
 export const openDealDocument = realOtc.openDealDocument;
-
-/** RATE_PENDING's and RATE_RENEGOTIATING's "Отменить заявку" — CANCEL. */
-export async function cancelDeal(dealId: string): Promise<Deal | undefined> {
-  return USE_REAL_API ? realOtc.sendOtcCommand(dealId, 'CANCEL') : mockActions.declineDeal(dealId);
-}
+export { DocumentUnavailableError } from '@/api/real/otc.ts';
 
 // Client-driven only (the quote card's own countdown hitting zero) — real
-// mode has no command for this at all, the server just eventually reflects
-// EXPIRED on its own; see DealDetail.tsx's QuoteCard for how each mode
-// handles the countdown reaching zero differently.
+// mode has no command for this, the server reflects EXPIRED (a quote) or
+// TOPUP (expired new terms) on its own.
 export const expireQuote = mockActions.expireQuote;
 export const setDepositBalanceForTesting = mockActions.setDepositBalanceForTesting;
+
+// Realtime (BRCE-4023 §9) — real mode only; mock mode has nothing to push.
+const nothingToStart = (): Promise<void> => Promise.resolve();
+export const startRealtime = USE_REAL_API ? realRealtime.startRealtime : nothingToStart;
+export const stopRealtime = USE_REAL_API ? realRealtime.stopRealtime : nothingToStart;
+export const subscribeRealtime = USE_REAL_API ? realRealtime.subscribeRealtime : () => () => undefined;
+export const subscribeRealtimeConnection = USE_REAL_API ? realRealtime.subscribeRealtimeConnection : () => () => undefined;
+export const isRealtimeConnected = USE_REAL_API ? realRealtime.isRealtimeConnected : () => false;
+export type { RealtimeEvent } from '@/api/real/realtime.ts';
+export const invalidateUser = USE_REAL_API ? realProfile.invalidateUser : () => undefined;
+
+/** A new access token, e.g. after the verification level changed — the old token keeps the old `level`. */
+export async function reissueToken(): Promise<void> {
+  if (USE_REAL_API) {
+    await refreshTokens();
+  }
+}
 
 export { ApiError } from '@/api/http.ts';
 export { mapApiError } from '@/api/real/errorMap.ts';
@@ -224,7 +258,7 @@ export type {
   DealDirection,
   DealDocument,
   DealDocumentKind,
-  OtcAccessResult,
+  DealTerms,
   Asset,
   AssetGroup,
   ClientType,

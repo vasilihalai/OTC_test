@@ -28,26 +28,46 @@ function FiatRow({ label, value, copy }: { label: string; value: string; copy: (
   );
 }
 
+/**
+ * The fiat rows in the payment instruction's order (BRCE-4023 Д6), so the screen and the PDF match.
+ * Empty fields aren't shown; the beneficiary's own account only when it differs from the settlement
+ * one (SWIFT accounts).
+ */
+function fiatRows(requisites: FiatRequisites): [string, string][] {
+  const rows: [string, string | undefined][] = [
+    [ru.dealDetail.requisitesRecipient, requisites.recipientName],
+    [ru.dealDetail.requisitesRecipientAddress, requisites.recipientAddress],
+    [ru.dealDetail.requisitesSettlementAccount, requisites.recipientAccount],
+    [
+      ru.dealDetail.requisitesBeneficiaryAccount,
+      requisites.account !== requisites.recipientAccount ? requisites.account : undefined,
+    ],
+    [ru.dealDetail.requisitesBank, requisites.bankName],
+    [ru.dealDetail.requisitesBankAddress, requisites.bankAddress],
+    [ru.dealDetail.requisitesBik, requisites.bic],
+    [ru.dealDetail.requisitesBankSwift, requisites.bankSwift],
+    [ru.dealDetail.requisitesCorrespondentBank, requisites.correspondentBankName],
+    [ru.dealDetail.requisitesCorrespondentAddress, requisites.correspondentBankAddress],
+    [ru.dealDetail.requisitesCorrespondentSwift, requisites.correspondentBankSwift],
+    [ru.dealDetail.requisitesIntermediaryBank, requisites.intermediaryBankName],
+    [ru.dealDetail.requisitesIntermediaryAddress, requisites.intermediaryBankAddress],
+    [ru.dealDetail.requisitesIntermediarySwift, requisites.intermediaryBankSwift],
+    [ru.dealDetail.requisitesPurpose, requisites.purpose],
+  ];
+  return rows.filter((row): row is [string, string] => !!row[1]);
+}
+
 export function RequisitesPanel({ requisites }: { requisites: FiatRequisites | CryptoRequisites }) {
   const copy = useCopy();
 
   if (requisites.kind === 'fiat') {
-    const rows: [string, string][] = [
-      [ru.dealDetail.requisitesCompanyName, requisites.companyName],
-      [ru.dealDetail.requisitesBank, requisites.bank],
-      [ru.dealDetail.requisitesBankAddress, requisites.bankAddress],
-      [ru.dealDetail.requisitesBik, requisites.bik],
-      [ru.dealDetail.requisitesAccount, requisites.account],
-      [ru.dealDetail.requisitesRecipient, requisites.recipient],
-      [ru.dealDetail.requisitesRecipientAddress, requisites.recipientAddress],
-      [ru.dealDetail.requisitesCorrAccount, requisites.corrAccount],
-      [ru.dealDetail.requisitesPurpose, requisites.purpose],
-    ];
+    const rows = fiatRows(requisites);
     const allText = rows.map(([label, value]) => `${label}: ${value}`).join('\n');
 
     return (
       <Panel fill="surface" radius="16px">
         <h2 className={e('heading')}>{ru.dealDetail.requisitesTitle}</h2>
+        {requisites.title && <p className={e('account-title')}>{requisites.title}</p>}
         {rows.map(([label, value]) => (
           <FiatRow key={label} label={label} value={value} copy={() => copy(value)}/>
         ))}

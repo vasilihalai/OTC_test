@@ -44,7 +44,86 @@ export const MOCK_USERS: Record<ClientType, User> = {
 
 export const MOCK_STATS: Stats = { activeDeals: 5, volume30d: '100.24M', volumeAsset: 'KGS' };
 
+/**
+ * One deal per screen the client can land on (BRCE-4023 §2). `amount`, `minAmount` and `documents`
+ * are filled in by `store.ts`, the way the backend sends them.
+ */
 export const MOCK_DEALS: Deal[] = [
+  {
+    id: 'OTC-1059',
+    status: 'REPRICE_PROPOSED',
+    date: '20.08.2026 11:40',
+    direction: 'BUY',
+    from: '5 000 000 KGS',
+    to: '57 175.53 USDT',
+    rate: '1 USDT = 87.45 KGS',
+    ratePerUnit: '87.45',
+    rateUnitLabel: 'KGS за 1 USDT',
+    ticker: 'KGS',
+    toTicker: 'USDT',
+    holdAmount: '2 000 000 KGS',
+    reprice: {
+      from: '2 000 000 KGS',
+      to: '22 727.27 USDT',
+      rate: '1 USDT = 88 KGS',
+      ratePerUnit: '88',
+      rateUnitLabel: 'KGS за 1 USDT',
+    },
+  },
+  {
+    id: 'OTC-1058',
+    status: 'SHORTFALL_REVIEW',
+    date: '20.08.2026 10:05',
+    direction: 'BUY',
+    from: '5 000 000 KGS',
+    to: '57 175.53 USDT',
+    rate: '1 USDT = 87.45 KGS',
+    ticker: 'KGS',
+    toTicker: 'USDT',
+    holdAmount: '2 000 000 KGS',
+  },
+  {
+    id: 'OTC-1057',
+    status: 'TERMS_PROPOSED',
+    date: '19.08.2026 16:20',
+    direction: 'SELL',
+    from: '25 000 USDT',
+    to: '2 177 500 KGS',
+    rate: '1 USDT = 87.1 KGS',
+    ratePerUnit: '87.1',
+    rateUnitLabel: 'KGS за 1 USDT',
+    ticker: 'USDT',
+    toTicker: 'KGS',
+    quoteExpiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    previous: {
+      from: '25 000 USDT',
+      to: '2 186 250 KGS',
+      rate: '1 USDT = 87.45 KGS',
+      ratePerUnit: '87.45',
+      rateUnitLabel: 'KGS за 1 USDT',
+    },
+  },
+  {
+    id: 'OTC-1056',
+    status: 'TERMS_PROPOSED',
+    date: '19.08.2026 14:02',
+    direction: 'BUY',
+    from: '3 000 000 KGS',
+    to: '34 305.32 USDT',
+    rate: '1 USDT = 87.45 KGS',
+    ratePerUnit: '87.45',
+    rateUnitLabel: 'KGS за 1 USDT',
+    ticker: 'KGS',
+    toTicker: 'USDT',
+    quoteExpiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    previous: {
+      from: '5 000 000 KGS',
+      to: '57 175.53 USDT',
+      rate: '1 USDT = 87.45 KGS',
+      ratePerUnit: '87.45',
+      rateUnitLabel: 'KGS за 1 USDT',
+    },
+  },
   {
     id: 'OTC-1055',
     status: 'RATE_ACTIVE',
@@ -54,6 +133,7 @@ export const MOCK_DEALS: Deal[] = [
     to: '100 954 500 KGS',
     rate: '1 USDT = 4 038.18 KGS',
     ticker: 'USDT',
+    toTicker: 'KGS',
     ratePerUnit: '4 038.18',
     rateUnitLabel: 'KGS за 1 USDT',
     quoteExpiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
@@ -77,6 +157,18 @@ export const MOCK_DEALS: Deal[] = [
     to: '159 275 USD',
     rate: '1 BTC = 62 706.69 USD',
     ticker: 'BTC',
+    toTicker: 'USD',
+  },
+  {
+    id: 'OTC-1052',
+    status: 'AWAITING_FUNDS',
+    date: '16.08.2026 12:30',
+    direction: 'BUY',
+    from: '4 000 000 KGS',
+    to: '45 740.42 USDT',
+    rate: '1 USDT = 87.45 KGS',
+    ticker: 'KGS',
+    toTicker: 'USDT',
   },
   {
     id: 'OTC-1051',
@@ -87,6 +179,20 @@ export const MOCK_DEALS: Deal[] = [
     to: '81 420 000 KGS',
     rate: null,
     ticker: 'USDT',
+    toTicker: 'KGS',
+  },
+  {
+    id: 'OTC-1050',
+    status: 'SHORTFALL_REVIEW',
+    date: '14.08.2026 17:45',
+    direction: 'SELL',
+    from: '30 000 USDT',
+    to: '2 623 500 KGS',
+    rate: '1 USDT = 87.45 KGS',
+    ticker: 'USDT',
+    toTicker: 'KGS',
+    holdAmount: '18 000 USDT',
+    repriceRejected: true,
   },
   {
     id: 'OTC-1049',
@@ -97,6 +203,8 @@ export const MOCK_DEALS: Deal[] = [
     to: '7 420 000 KGS',
     rate: '1 USDT = 371.00 KGS',
     ticker: 'USDT',
+    toTicker: 'KGS',
+    holdAmount: '20 000 USDT',
   },
   {
     id: 'OTC-1048',
@@ -107,6 +215,8 @@ export const MOCK_DEALS: Deal[] = [
     to: '8 500.51 USDT',
     rate: '1 USDT = 117.64 KGS',
     ticker: 'KGS',
+    toTicker: 'USDT',
+    holdAmount: '1 000 000 KGS',
   },
   {
     id: 'OTC-1047',
@@ -117,6 +227,7 @@ export const MOCK_DEALS: Deal[] = [
     to: '11 454.75 USDT',
     rate: '1 USDT = 349.20 KGS',
     ticker: 'KGS',
+    toTicker: 'USDT',
   },
   {
     id: 'OTC-1044',
@@ -127,6 +238,7 @@ export const MOCK_DEALS: Deal[] = [
     to: '890 000 000 KGS',
     rate: '1 USD = 89 000.00 KGS',
     ticker: 'USD',
+    toTicker: 'KGS',
   },
   {
     id: 'OTC-1040',
@@ -137,6 +249,7 @@ export const MOCK_DEALS: Deal[] = [
     to: '25 500.00 USDT',
     rate: '1 USDT = 117.65 KGS',
     ticker: 'KGS',
+    toTicker: 'USDT',
   },
   {
     id: 'OTC-1036',
@@ -147,6 +260,7 @@ export const MOCK_DEALS: Deal[] = [
     to: '6 300 000 KGS',
     rate: '1 USDC = 350.00 KGS',
     ticker: 'USDC',
+    toTicker: 'KGS',
   },
   {
     id: 'OTC-1029',
@@ -157,6 +271,7 @@ export const MOCK_DEALS: Deal[] = [
     to: '445 000 000 KGS',
     rate: '1 USD = 89 000.00 KGS',
     ticker: 'USD',
+    toTicker: 'KGS',
   },
   {
     id: 'OTC-1018',
@@ -167,6 +282,7 @@ export const MOCK_DEALS: Deal[] = [
     to: '9 150.00 USDT',
     rate: '1 USDT = 87.43 RUB',
     ticker: 'RUB',
+    toTicker: 'USDT',
   },
   {
     id: 'OTC-1005',
@@ -177,10 +293,11 @@ export const MOCK_DEALS: Deal[] = [
     to: '1 800 000 KGS',
     rate: '1 BTC = 6 000 000.00 KGS',
     ticker: 'BTC',
+    toTicker: 'KGS',
   },
 ];
 
-/** OTC minimum deal size per source asset — used by the confirmation body's callout branches. */
+/** OTC minimum deal size per source asset — the backend's `minAmount` on every mock deal. */
 export const MOCK_MIN_DEAL: Record<string, string> = {
   KGS: '1000000',
   RUB: '1000000',
@@ -190,29 +307,41 @@ export const MOCK_MIN_DEAL: Record<string, string> = {
   BTC: '0.15',
 };
 
+/** `kind: FIAT` of the requisites method: a KGS account at a local bank, picked by the operator. */
 export const MOCK_REQUISITES_FIAT: FiatRequisites = {
   kind: 'fiat',
-  companyName: 'ОАО «СО ЕЭС»',
-  bank: 'ОАО «БАКАЙ БАНК»',
-  bankAddress: 'Кыргызская Республика, 720040, г. Бишкек, ул. Исанова 105',
-  bik: '124032',
-  account: '1240020001397008',
-  recipient: 'ОАО «БитРуби»',
+  title: 'Бакай, KGS',
+  recipientName: 'ОАО «БитРуби»',
   recipientAddress: 'Кыргызская Республика, г. Бишкек, Ленинский район, ул. Тыныстанова 249',
-  corrAccount: '30100012345678976190',
-  purpose: 'Оплата по заявке № ОТС–1052. НДС не облагается',
+  recipientAccount: '1240020001397008',
+  bankName: 'ОАО «БАКАЙ БАНК»',
+  bankAddress: 'Кыргызская Республика, 720040, г. Бишкек, ул. Исанова 105',
+  bic: '124032',
+  purpose: 'Оплата по заявке № {requestNumber}. НДС не облагается',
 };
 
-export const MOCK_REQUISITES_CRYPTO: CryptoRequisites = {
-  kind: 'crypto',
-  asset: 'USDT',
-  assetName: 'Tether',
-  network: 'TRON (TRC-20)',
-  address: 'bnb1mrzq7fenlfxx59usn2fn8aygdyfrsku4jz8k9r',
-  networks: [
-    { network: 'TRON (TRC-20)', address: 'bnb1mrzq7fenlfxx59usn2fn8aygdyfrsku4jz8k9r' },
-    { network: 'Ethereum (ERC-20)', address: '0x71C7656EC7ab88b098defB7501B1f9A5C2b3E4d' },
-  ],
+/** A SWIFT account: the beneficiary's own account differs from the settlement one, plus a correspondent bank. */
+export const MOCK_REQUISITES_FIAT_SWIFT: FiatRequisites = {
+  kind: 'fiat',
+  title: 'Бакай, SWIFT USD',
+  recipientName: 'OJSC BitRuby',
+  recipientAddress: '249 Tynystanov St, Bishkek 720040, Kyrgyz Republic',
+  recipientAccount: '36312345678901234567',
+  account: '1240020001397990',
+  bankName: 'OJSC Bakai Bank',
+  bankAddress: '105 Isanov St, Bishkek 720040, Kyrgyz Republic',
+  bankSwift: 'BAKAKG22',
+  correspondentBankName: 'Halyk Bank of Kazakhstan JSC',
+  correspondentBankAddress: '40 Al-Farabi Ave, Almaty 050059, Kazakhstan',
+  correspondentBankSwift: 'HSBKKZKX',
+  purpose: 'Payment under request No. {requestNumber}. VAT exempt',
+};
+
+/** `kind: CRYPTO`: the client's own deposit address, one network per asset, as the method sends it. */
+export const MOCK_CRYPTO_DEPOSIT: Record<string, Omit<CryptoRequisites, 'kind' | 'asset'>> = {
+  USDT: { assetName: 'Tether', network: 'TRON (TRC-20)', address: 'TQmVaGCVZ8bYtq1cJ4pF7nR2wS9dLxK3Yu' },
+  USDC: { assetName: 'USD Coin', network: 'Ethereum (ERC-20)', address: '0x71C7656EC7ab88b098defB7501B1f9A5C2b3E4d' },
+  BTC: { assetName: 'Bitcoin', network: 'Bitcoin', address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh' },
 };
 
 export const MOCK_ASSETS: Asset[] = [

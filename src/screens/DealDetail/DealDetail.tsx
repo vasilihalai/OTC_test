@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
@@ -15,30 +15,43 @@ import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import {
   ApiError,
+  DocumentUnavailableError,
   USE_REAL_API,
   acceptQuote,
+  acceptReprice,
+  acceptTerms,
   cancelDeal,
   confirmHold,
   expireQuote,
   getAccounts,
   getDealById,
-  getRequisites,
+  getDealRequisites,
   mapApiError,
   openDealDocument,
   rejectQuote,
+  rejectReprice,
+  rejectTerms,
   requestNewRate,
   setDepositBalanceForTesting,
 } from '@/api/index.ts';
-import type { Deal, DealDocumentKind, Requisites } from '@/api/index.ts';
+import type { ConfirmDealPatch, Deal, DealDocument, DealDocumentKind, Requisites } from '@/api/index.ts';
 import { useRequireSession } from '@/store/session.ts';
 import { useToastStore } from '@/store/toast.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { useTransferModalStore } from '@/store/transferModal.ts';
-import { DEAL_STATUS_META, getDetailRows, getDocumentAvailability, isHoldConfirmationStatus, isTerminalDealStatus } from '@/lib/dealStatus.ts';
-import { computeScenarioBalance, getMinDealAmount, isBalanceScenario, parseAmountValue } from '@/lib/balanceScenario.ts';
+import { DEAL_STATUS_META, getDetailRows, isTerminalDealStatus } from '@/lib/dealStatus.ts';
+import {
+  computeScenarioBalance,
+  decimalString,
+  holdBranch,
+  isBalanceScenario,
+  parseAmountValue,
+  shortfallOf,
+} from '@/lib/balanceScenario.ts';
 import { formatAmount, parseAmountWithTicker } from '@/lib/money.ts';
 import { formatCountdown, msUntil } from '@/lib/countdown.ts';
 import { usePolling } from '@/lib/usePolling.ts';
+import { useRealtimeConnected, useRealtimeEvent } from '@/lib/useRealtime.ts';
 import { renderTemplate } from '@/lib/template.tsx';
 import { SAMPLE_DOCUMENT_URL } from '@/lib/sampleDocument.ts';
 import { notifyError, openExternalLink } from '@/telegram/adapter.ts';
@@ -52,16 +65,102 @@ const DIRECTION_LABEL: Record<Deal['direction'], string> = {
   EXCHANGE: ru.deals.directionExchange,
 };
 
-const DOCUMENT_ROWS: { kind: DealDocumentKind; name: string }[] = [
-  { kind: 'accept', name: ru.dealDetail.documentAccept },
-  { kind: 'payment', name: ru.dealDetail.documentPayment },
-  { kind: 'certificate', name: ru.dealDetail.documentCertificate },
-];
+const DOCUMENT_NAMES: Record<DealDocumentKind, string> = {
+  accept: ru.dealDetail.documentAccept,
+  payment: ru.dealDetail.documentPayment,
+  certificate: ru.dealDetail.documentCertificate,
+};
+
+const DOCUMENT_ORDER: DealDocumentKind[] = ['accept', 'payment', 'certificate'];
+
+/**
+ * BRCE-4023 §9: without the socket the card is read every 4 seconds, so a top-up shows up within the
+ * 5 seconds the BRD asks for; with it, notifications drive the updates and polling is a safety net.
+ */
+const POLL_MS = 4_000;
+const POLL_CONNECTED_MS = 30_000;
 
 function showDealError(err: unknown, fallback: string) {
   console.error('[DealDetail] action failed', err);
   notifyError();
   useToastStore.getState().show(err instanceof ApiError ? mapApiError(err) : fallback);
+}
+
+interface BodyProps {
+  deal: Deal;
+  onUpdate: (deal: Deal) => void;
+  /** Re-reads the card — after any failed action the screen must show the deal's real state. */
+  refresh: () => void;
+}
+
+/** One action at a time per card; the button that started it shows the spinner. */
+function useDealAction({ onUpdate, refresh }: Pick<BodyProps, 'onUpdate' | 'refresh'>) {
+  const [busy, setBusy] = useState<string>();
+
+  async function run(name: string, action: () => Promise<Deal | undefined>) {
+    setBusy(name);
+    try {
+      const updated = await action();
+      if (updated) {
+        onUpdate(updated);
+      }
+    } catch (err) {
+      showDealError(err, ru.common.errorGeneric);
+      refresh();
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
+  return { busy, run };
+}
+
+/** Client-side countdown to a server timestamp, re-synced on focus — never trusts elapsed device time. */
+function useCountdown(expiresAt: string | undefined): number {
+  const [remainingMs, setRemainingMs] = useState(() => msUntil(expiresAt));
+  useEffect(() => {
+    function sync() {
+      setRemainingMs(msUntil(expiresAt));
+    }
+    sync();
+    const interval = setInterval(sync, 1000);
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('focus', sync);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('focus', sync);
+    };
+  }, [expiresAt]);
+  return remainingMs;
+}
+
+/**
+ * The timer ran out. Real mode has no command for it: the server moves a quote to EXPIRED and expired
+ * new terms back to TOPUP, so the card is read again. The mock does the same move itself.
+ */
+function useExpiry(deal: Deal, remainingMs: number, { onUpdate, refresh }: Pick<BodyProps, 'onUpdate' | 'refresh'>) {
+  useEffect(() => {
+    if (!deal.quoteExpiresAt || remainingMs > 0) {
+      return;
+    }
+    if (USE_REAL_API) {
+      refresh();
+      return;
+    }
+    const updated = expireQuote(deal.id);
+    if (updated) {
+      onUpdate(updated);
+    }
+  }, [remainingMs, deal.id, deal.quoteExpiresAt, onUpdate, refresh]);
+}
+
+/** What the client actually gives and gets once the hold is made: the frozen amount and the recalculated terms. */
+function settledAmounts(deal: Deal): { give: string; receive: string | null } {
+  if (deal.status === 'RUNNING' || deal.status === 'DONE') {
+    return { give: deal.holdAmount ?? deal.actualFrom ?? deal.from, receive: deal.actualTo ?? deal.to };
+  }
+  return { give: deal.from, receive: deal.to };
 }
 
 export function DealDetail() {
@@ -72,6 +171,7 @@ export function DealDetail() {
   const [notFound, setNotFound] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const connected = useRealtimeConnected();
 
   useEffect(() => {
     if (!id) {
@@ -92,14 +192,26 @@ export function DealDetail() {
     }).finally(() => setLoading(false));
   }, [id, attempt]);
 
-  // §7.7 — real mode only, and only while the deal is still in a
-  // non-terminal status; nothing about a DONE/DECLINED deal changes again.
-  // A failed poll is simply retried by the next one.
-  usePolling(() => {
+  // A failed re-read is simply retried by the next one.
+  const refresh = useCallback(() => {
     if (id) {
       void getDealById(id).then((data) => data && setDeal(data)).catch(() => undefined);
     }
-  }, 10_000, USE_REAL_API && !!deal && !isTerminalDealStatus(deal.status));
+  }, [id]);
+
+  usePolling(refresh, connected ? POLL_CONNECTED_MS : POLL_MS, USE_REAL_API && !!deal && !isTerminalDealStatus(deal.status));
+
+  useRealtimeEvent((event) => {
+    if (!deal) {
+      return;
+    }
+    if (event.type === 'operation-status' && event.operationId === deal.id) {
+      refresh();
+    } else if (event.type === 'wallet-changed' && deal.status === 'AWAITING_FUNDS') {
+      // The card carries the balance and the shortfall, computed at the moment it's read.
+      refresh();
+    }
+  });
 
   if (failed && !deal) {
     return (
@@ -119,6 +231,8 @@ export function DealDetail() {
 
   const meta = deal && DEAL_STATUS_META[deal.status];
   const detailRows = deal && getDetailRows(deal.status);
+  const bodyProps = deal && { deal, onUpdate: setDeal, refresh };
+  const amounts = deal && settledAmounts(deal);
 
   return (
     <div className="deal-detail">
@@ -134,20 +248,23 @@ export function DealDetail() {
         </Panel>
       )}
 
-      {deal && (
-        deal.status === 'RATE_ACTIVE' ? <QuoteCard deal={deal} onUpdate={setDeal}/>
-          : isHoldConfirmationStatus(deal.status) ? <ConfirmationBody deal={deal} onUpdate={setDeal}/>
-            : <StatusHeroBody deal={deal} onUpdate={setDeal}/>
-      )}
+      {bodyProps && <DealBody {...bodyProps}/>}
 
-      {deal && detailRows && (
+      {deal && detailRows && amounts && (
         <div className="deal-detail__section">
           <h2 className="deal-detail__section-title">{ru.dealDetail.detailsTitle}</h2>
-          {/* Real mode's detail response carries no createdAt (§7.4) — a deep link that never fetched the list just doesn't show the row. */}
           {deal.date && <KeyValueRow label={ru.dealDetail.createdDateLabel} value={deal.date}/>}
           <KeyValueRow label={ru.dealDetail.directionLabel} value={DIRECTION_LABEL[deal.direction]}/>
-          {detailRows.give && <KeyValueRow label={ru.dealDetail.giveLabel} value={deal.from}/>}
-          {detailRows.receive && <KeyValueRow label={ru.dealDetail.receiveLabel} value={deal.to ?? ru.common.tbd}/>}
+          {detailRows.give && (
+            <KeyValueRow
+              label={deal.status === 'SHORTFALL_REVIEW' ? ru.dealDetail.dealAmountLabel : ru.dealDetail.giveLabel}
+              value={amounts.give}
+            />
+          )}
+          {detailRows.hold && (deal.holdAmount ?? deal.actualFrom) && (
+            <KeyValueRow label={ru.dealDetail.holdLabel} value={deal.holdAmount ?? deal.actualFrom}/>
+          )}
+          {detailRows.receive && <KeyValueRow label={ru.dealDetail.receiveLabel} value={amounts.receive ?? ru.common.tbd}/>}
           {detailRows.rate && (
             <KeyValueRow
               label={ru.dealDetail.rateLabel}
@@ -157,25 +274,61 @@ export function DealDetail() {
         </div>
       )}
 
-      {deal && <DealDocuments deal={deal}/>}
+      {bodyProps && <DealDocuments {...bodyProps}/>}
     </div>
   );
 }
 
-function DealDocuments({ deal }: { deal: Deal }) {
-  const [opening, setOpening] = useState<DealDocumentKind>();
-  const availability = getDocumentAvailability(deal.status);
+function DealBody(props: BodyProps) {
+  switch (props.deal.status) {
+    case 'RATE_ACTIVE':
+      return <QuoteCard {...props}/>;
+    case 'TERMS_PROPOSED':
+      return <TermsCard {...props}/>;
+    case 'REPRICE_PROPOSED':
+      return <RepriceCard {...props}/>;
+    case 'AWAITING_FUNDS':
+      return <ConfirmationBody {...props}/>;
+    default:
+      return <StatusHeroBody {...props}/>;
+  }
+}
 
-  async function handleOpen(kind: DealDocumentKind, href?: string) {
-    if (!USE_REAL_API || !href) {
+function documentCaption(deal: Deal, document: DealDocument): string | undefined {
+  // A declined deal never gets its documents, so there's nothing to wait for.
+  if (deal.status === 'DECLINED') {
+    return undefined;
+  }
+  return (document.hint && ru.dealDetail.documentHints[document.hint]) || ru.dealDetail.documentUnavailableCaption;
+}
+
+/** The deal's documents as the backend lists them (BRCE-4023 §7), opened by their signed links. */
+function DealDocuments({ deal, onUpdate, refresh }: BodyProps) {
+  const [opening, setOpening] = useState<DealDocumentKind>();
+  const documents = DOCUMENT_ORDER.flatMap((kind) => deal.documents?.filter((document) => document.kind === kind) ?? []);
+  if (documents.length === 0) {
+    return null;
+  }
+
+  async function handleOpen(document: DealDocument) {
+    if (!USE_REAL_API) {
       openExternalLink(SAMPLE_DOCUMENT_URL);
       return;
     }
-    setOpening(kind);
+    const name = DOCUMENT_NAMES[document.kind].replace(/\.pdf$/, '');
+    setOpening(document.kind);
     try {
-      await openDealDocument(href);
+      const fresh = await openDealDocument(deal, document.kind, `${name} ${deal.requestNumber ?? deal.id}.pdf`);
+      if (fresh) {
+        onUpdate(fresh);
+      }
     } catch (err) {
-      showDealError(err, ru.dealDetail.documentOpenError);
+      if (err instanceof DocumentUnavailableError) {
+        useToastStore.getState().show(ru.dealDetail.documentUnavailableToast);
+        refresh();
+      } else {
+        showDealError(err, ru.dealDetail.documentOpenError);
+      }
     } finally {
       setOpening(undefined);
     }
@@ -184,92 +337,25 @@ function DealDocuments({ deal }: { deal: Deal }) {
   return (
     <div className="deal-detail__section">
       <h2 className="deal-detail__section-title">{ru.dealDetail.documentsTitle}</h2>
-      {DOCUMENT_ROWS.map(({ kind, name }) => {
-        // Real mode also needs the backend to have the file: `documents` is undefined only in mock mode.
-        const backend = deal.documents?.find((document) => document.kind === kind);
-        const ready = !deal.documents || (!!backend?.available && !!backend.href);
-        return (
-          <DocumentRow
-            key={kind}
-            name={name}
-            enabled={availability[kind] && ready}
-            caption={availability.showCaption ? ru.dealDetail.documentUnavailableCaption : undefined}
-            loading={opening === kind}
-            onOpen={() => void handleOpen(kind, backend?.href)}
-          />
-        );
-      })}
+      {documents.map((document) => (
+        <DocumentRow
+          key={document.kind}
+          name={DOCUMENT_NAMES[document.kind]}
+          enabled={document.available && !!document.href}
+          caption={documentCaption(deal, document)}
+          loading={opening === document.kind}
+          onOpen={() => void handleOpen(document)}
+        />
+      ))}
     </div>
   );
 }
 
-function QuoteCard({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal) => void }) {
-  const [remainingMs, setRemainingMs] = useState(() => msUntil(deal.quoteExpiresAt));
-  const [confirming, setConfirming] = useState(false);
-  const [declining, setDeclining] = useState(false);
+function QuoteCard({ deal, onUpdate, refresh }: BodyProps) {
+  const remainingMs = useCountdown(deal.quoteExpiresAt);
+  const { busy, run } = useDealAction({ onUpdate, refresh });
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
-
-  useEffect(() => {
-    function sync() {
-      setRemainingMs(msUntil(deal.quoteExpiresAt));
-    }
-    sync();
-    const interval = setInterval(sync, 1000);
-    document.addEventListener('visibilitychange', sync);
-    window.addEventListener('focus', sync);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', sync);
-      window.removeEventListener('focus', sync);
-    };
-  }, [deal.quoteExpiresAt]);
-
-  useEffect(() => {
-    if (remainingMs > 0) {
-      return;
-    }
-    if (USE_REAL_API) {
-      // No command exists for "the countdown ran out" (§7.6's nine don't
-      // include one — the server just eventually reflects EXPIRED on its
-      // own) — an immediate one-off refetch here is snappier than waiting
-      // out the rest of the 10s poll interval below for the same update.
-      void getDealById(deal.id).then((updated) => updated && onUpdate(updated)).catch(() => undefined);
-    } else {
-      const updated = expireQuote(deal.id);
-      if (updated) {
-        onUpdate(updated);
-      }
-    }
-  }, [remainingMs, deal.id, onUpdate]);
-
-  async function handleConfirm() {
-    setConfirming(true);
-    try {
-      const updated = await acceptQuote(deal.id);
-      if (updated) {
-        onUpdate(updated);
-      }
-    } catch (err) {
-      showDealError(err, ru.common.errorGeneric);
-    } finally {
-      setConfirming(false);
-    }
-  }
-
-  async function handleDecline() {
-    setDeclineDialogOpen(false);
-    setDeclining(true);
-    try {
-      const updated = await rejectQuote(deal.id);
-      if (updated) {
-        onUpdate(updated);
-      }
-    } catch (err) {
-      showDealError(err, ru.common.errorGeneric);
-    } finally {
-      setDeclining(false);
-    }
-  }
+  useExpiry(deal, remainingMs, { onUpdate, refresh });
 
   return (
     <div className="quote-card">
@@ -286,25 +372,143 @@ function QuoteCard({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal) => v
         <KeyValueRow label={ru.dealDetail.giveLabel} value={deal.from}/>
         <KeyValueRow label={ru.dealDetail.receiveLabel} value={<span className="quote-card__positive">{deal.to ?? ru.common.tbd}</span>}/>
       </div>
-      <Button variant="accent" loading={confirming} onClick={() => void handleConfirm()}>
+      <Button variant="accent" loading={busy === 'accept'} disabled={!!busy} onClick={() => void run('accept', () => acceptQuote(deal))}>
         {ru.dealDetail.confirmDealAction}
       </Button>
-      <Button type="button" variant="link" danger loading={declining} onClick={() => setDeclineDialogOpen(true)}>
+      <Button type="button" variant="link" danger loading={busy === 'decline'} disabled={!!busy} onClick={() => setDeclineDialogOpen(true)}>
         {ru.dealDetail.declineAction}
       </Button>
       <ConfirmDialog
         open={declineDialogOpen}
         title={ru.dealDetail.declineConfirmTitle}
-        onConfirm={() => void handleDecline()}
+        onConfirm={() => {
+          setDeclineDialogOpen(false);
+          void run('decline', () => rejectQuote(deal));
+        }}
         onCancel={() => setDeclineDialogOpen(false)}
       />
     </div>
   );
 }
 
-type Branch = 'sufficient' | 'short1' | 'short' | 'belowmin';
+/**
+ * The operator changed the amount and/or the rate after the quote was accepted (С-15): "Было / Станет /
+ * Вы получите". Accepting goes back to the top-up screen with the new terms, declining keeps the old
+ * ones; so does the offer running out.
+ */
+function TermsCard({ deal, onUpdate, refresh }: BodyProps) {
+  const remainingMs = useCountdown(deal.quoteExpiresAt);
+  const { busy, run } = useDealAction({ onUpdate, refresh });
+  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
+  useExpiry(deal, remainingMs, { onUpdate, refresh });
 
-function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal) => void }) {
+  const previous = deal.previous;
+  const amountChanged = !!previous && previous.from !== deal.from;
+  const rateChanged = !!previous && !!previous.rate && previous.rate !== deal.rate;
+  const acceptLabel = amountChanged && !rateChanged
+    ? ru.dealDetail.acceptNewAmountAction
+    : rateChanged && !amountChanged
+      ? ru.dealDetail.acceptNewRateAction
+      : ru.dealDetail.acceptNewTermsAction;
+
+  return (
+    <div className="quote-card">
+      <p className="quote-card__prepared">{ru.dealDetail.termsPrepared}</p>
+      {deal.quoteExpiresAt && (
+        <p className="quote-card__countdown quote-card__countdown--top">
+          {ru.dealDetail.termsValidLabel} <span className="quote-card__timer">{formatCountdown(remainingMs)} {ru.dealDetail.quoteSecondsSuffix}</span>
+        </p>
+      )}
+      <div className="quote-card__rows">
+        {amountChanged && previous && (
+          <>
+            <KeyValueRow label={ru.dealDetail.termsWasLabel} value={<span className="quote-card__was">{previous.from}</span>}/>
+            <KeyValueRow label={ru.dealDetail.termsBecomesLabel} value={<b className="quote-card__new">{deal.from}</b>}/>
+          </>
+        )}
+        {rateChanged && previous && (
+          <>
+            <KeyValueRow label={ru.dealDetail.rateWasLabel} value={<span className="quote-card__was">{previous.rate}</span>}/>
+            <KeyValueRow label={ru.dealDetail.newRateLabel} value={<b className="quote-card__new">{deal.rate}</b>}/>
+          </>
+        )}
+        {!amountChanged && !rateChanged && (
+          <>
+            <KeyValueRow label={ru.dealDetail.newAmountLabel} value={deal.from}/>
+            <KeyValueRow label={ru.dealDetail.rateLabel} value={deal.rate ?? ru.common.tbd}/>
+          </>
+        )}
+        <KeyValueRow label={ru.dealDetail.receiveLabel} value={<span className="quote-card__positive">{deal.to ?? ru.common.tbd}</span>}/>
+      </div>
+      <Button variant="accent" loading={busy === 'accept'} disabled={!!busy} onClick={() => void run('accept', () => acceptTerms(deal))}>
+        {acceptLabel}
+      </Button>
+      <Button type="button" variant="link" danger loading={busy === 'decline'} disabled={!!busy} onClick={() => setDeclineDialogOpen(true)}>
+        {ru.dealDetail.declineAction}
+      </Button>
+      <ConfirmDialog
+        open={declineDialogOpen}
+        title={ru.dealDetail.rejectTermsConfirmTitle}
+        body={ru.dealDetail.rejectTermsConfirmBody}
+        onConfirm={() => {
+          setDeclineDialogOpen(false);
+          void run('decline', () => rejectTerms(deal));
+        }}
+        onCancel={() => setDeclineDialogOpen(false)}
+      />
+    </div>
+  );
+}
+
+/**
+ * Less than the deal was frozen and the operator offers a new rate on that amount (С-14, 3б). Accepting
+ * sends the deal to execution, declining hands it back to the operator.
+ */
+function RepriceCard({ deal, onUpdate, refresh }: BodyProps) {
+  const { busy, run } = useDealAction({ onUpdate, refresh });
+  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
+  const reprice = deal.reprice;
+
+  return (
+    <div className="quote-card">
+      <p className="quote-card__prepared">{ru.dealDetail.repricePrepared}</p>
+      <p className="quote-card__rate-label">{ru.dealDetail.newRateLabel}</p>
+      <p className="quote-card__rate">
+        <span className="quote-card__rate-value">{reprice?.ratePerUnit ?? ru.common.tbd}</span>
+        {reprice?.rateUnitLabel && <span className="quote-card__rate-unit"> {reprice.rateUnitLabel}</span>}
+      </p>
+      <div className="quote-card__rows quote-card__rows--spaced">
+        <KeyValueRow label={ru.dealDetail.rateWasLabel} value={<span className="quote-card__was">{deal.rate ?? ru.common.tbd}</span>}/>
+        <KeyValueRow label={ru.dealDetail.giveLabel} value={reprice?.from || deal.holdAmount || ru.common.tbd}/>
+        <KeyValueRow label={ru.dealDetail.receiveLabel} value={<span className="quote-card__positive">{reprice?.to ?? ru.common.tbd}</span>}/>
+      </div>
+      <Button variant="accent" loading={busy === 'accept'} disabled={!!busy} onClick={() => void run('accept', () => acceptReprice(deal))}>
+        {ru.dealDetail.acceptNewRateAction}
+      </Button>
+      <Button type="button" variant="link" danger loading={busy === 'decline'} disabled={!!busy} onClick={() => setDeclineDialogOpen(true)}>
+        {ru.dealDetail.declineAction}
+      </Button>
+      <ConfirmDialog
+        open={declineDialogOpen}
+        title={ru.dealDetail.rejectRepriceConfirmTitle}
+        body={ru.dealDetail.rejectRepriceConfirmBody}
+        onConfirm={() => {
+          setDeclineDialogOpen(false);
+          void run('decline', () => rejectReprice(deal));
+        }}
+        onCancel={() => setDeclineDialogOpen(false)}
+      />
+    </div>
+  );
+}
+
+/**
+ * Top up and confirm the hold (С-01, С-13, С-14, С-16). Real mode reads the balance, the shortfall and
+ * the minimum off the card, which the server computes at the moment it's read; the mock reads its own
+ * deposit balance. The branch mirrors the server's CONFIRM_HOLD rule, so the only blocked case is the
+ * one the server would answer without freezing anything.
+ */
+function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
   const [searchParams] = useSearchParams();
   const urlScenario = searchParams.get('scenario');
   const storeScenario = useUiStore((s) => s.balanceScenario);
@@ -312,130 +516,89 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
   const balancesVersion = useUiStore((s) => s.balancesVersion);
   const openTransferModal = useTransferModalStore((s) => s.open);
   // null = no dev override, show the real deposit balance.
-  const scenario = isBalanceScenario(urlScenario) ? urlScenario : storeScenario;
+  const scenario = USE_REAL_API ? null : (isBalanceScenario(urlScenario) ? urlScenario : storeScenario);
   const [requisites, setRequisites] = useState<Requisites>();
-  const [balance, setBalance] = useState<number>();
+  const [accountBalance, setAccountBalance] = useState<string>();
   const [balanceFailed, setBalanceFailed] = useState(false);
   const [balanceAttempt, setBalanceAttempt] = useState(0);
-  const [confirming, setConfirming] = useState(false);
-  const [declining, setDeclining] = useState(false);
+  const { busy, run } = useDealAction({ onUpdate, refresh });
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
 
+  const amount = deal.amount ?? String(parseAmountValue(deal.from));
+  const minAmount = deal.minAmount ?? '0';
+  // The card's balance is the server's own figure; the deposit balance is only a fallback for a card without one.
+  const cardBalance = USE_REAL_API ? deal.balance : undefined;
+
   useEffect(() => {
-    void getRequisites(deal.id).then(setRequisites).catch((err: unknown) => {
+    void getDealRequisites(deal.id).then(setRequisites).catch((err: unknown) => {
       console.error('[DealDetail] requisites load failed', err);
     });
   }, [deal.id]);
 
-  const dealAmount = parseAmountValue(deal.from);
-
-  // Explicit dev override only — forces the deposit balance to whatever
-  // produces the requested case for this deal, then it's read back below
-  // like any other real balance. Meaningless in real mode (the mock
-  // accounts store it writes to has no bearing on a real getAccounts()
-  // result), so skipped there rather than left as harmless dead code.
+  // Explicit dev override only — forces the mock deposit balance to whatever produces the requested case.
   useEffect(() => {
-    if (!scenario || USE_REAL_API) {
+    if (!scenario) {
       return;
     }
-    const target = computeScenarioBalance(dealAmount, deal.ticker, scenario);
+    const target = computeScenarioBalance(Number(amount), Number(minAmount), scenario);
     setDepositBalanceForTesting(deal.ticker, target);
-  }, [scenario, deal.ticker, dealAmount]);
+  }, [scenario, deal.ticker, amount, minAmount]);
 
   useEffect(() => {
+    if (cardBalance !== undefined) {
+      return;
+    }
     setBalanceFailed(false);
     void getAccounts()
-      .then((accounts) => setBalance(Number(accounts.deposit[deal.ticker] ?? '0')))
+      .then((accounts) => setAccountBalance(decimalString(Number(accounts.deposit[deal.ticker] ?? '0'))))
       .catch((err: unknown) => {
         console.error('[DealDetail] balance load failed', err);
         setBalanceFailed(true);
       });
-  }, [deal.ticker, scenario, balancesVersion, balanceAttempt]);
+  }, [cardBalance, deal.ticker, scenario, balancesVersion, balanceAttempt]);
 
-  const minDeal = getMinDealAmount(deal.ticker);
-
+  const balance = cardBalance ?? accountBalance;
   if (balance === undefined) {
     return balanceFailed
       ? <LoadError message={ru.home.balancesError} onRetry={() => setBalanceAttempt((n) => n + 1)}/>
       : <Skeleton height={90} radius={14}/>;
   }
 
-  // §7.3.2's exact order: sufficient, then the ≤1% case, then below-minimum,
-  // else short — belowmin can never coincide with short1 by construction.
-  let branch: Branch;
-  if (balance >= dealAmount) {
-    branch = 'sufficient';
-  } else if ((dealAmount - balance) / dealAmount <= 0.01) {
-    branch = 'short1';
-  } else if (balance < minDeal) {
-    branch = 'belowmin';
-  } else {
-    branch = 'short';
-  }
-
-  const balanceLabel = `${formatAmount(String(balance), deal.ticker)} ${deal.ticker}`;
-  const minLabel = `${formatAmount(String(minDeal), deal.ticker)} ${deal.ticker}`;
+  const branch = holdBranch(balance, amount, minAmount);
+  const shortfall = deal.missingAmount && Number(deal.missingAmount) > 0 ? deal.missingAmount : shortfallOf(balance, amount);
+  const balanceLabel = `${formatAmount(balance, deal.ticker)} ${deal.ticker}`;
+  const minLabel = `${formatAmount(minAmount, deal.ticker)} ${deal.ticker}`;
+  // A ≤1% shortfall: the server sends what the deal becomes; the mock recalculates at the same rate.
   const counter = deal.to ? parseAmountWithTicker(deal.to) : undefined;
-  const recalculatedValue = counter ? (balance / dealAmount) * counter.value : undefined;
-  const recalculated = counter && recalculatedValue !== undefined
-    ? `${formatAmount(String(recalculatedValue), counter.ticker)} ${counter.ticker}`
-    : balanceLabel;
+  const recalculatedFrom = deal.actualFrom ?? balanceLabel;
+  const recalculatedTo = deal.actualTo ?? (counter && Number(amount) > 0
+    ? `${formatAmount(String((Number(balance) / Number(amount)) * counter.value), counter.ticker)} ${counter.ticker}`
+    : balanceLabel);
 
-  async function handleConfirm() {
-    setConfirming(true);
-    try {
-      // Freezing an amount well short of the deal (the "short" branch,
-      // beyond short1's ≤1% auto-recalculation) isn't a plain hold — it's
-      // literally a request for new terms against the smaller frozen
-      // amount, i.e. the deal moves into renegotiation, not straight to
-      // RUNNING. Confirmed by the user directly — this is one of
-      // RATE_RENEGOTIATING's trigger.
-      const patch = branch === 'short1'
-        ? { status: 'RUNNING' as const, from: balanceLabel, to: recalculated }
-        : branch === 'short'
-          ? { status: 'RATE_RENEGOTIATING' as const }
-          : { status: 'RUNNING' as const };
-      const updated = await confirmHold(deal.id, patch);
-      if (updated) {
-        onUpdate(updated);
-      }
-    } catch (err) {
-      showDealError(err, ru.common.errorGeneric);
-    } finally {
-      setConfirming(false);
-    }
-  }
-
-  async function handleDecline() {
-    setDeclineDialogOpen(false);
-    setDeclining(true);
-    try {
-      const updated = await rejectQuote(deal.id);
-      if (updated) {
-        onUpdate(updated);
-      }
-    } catch (err) {
-      showDealError(err, ru.common.errorGeneric);
-    } finally {
-      setDeclining(false);
-    }
+  function confirm() {
+    const patch: ConfirmDealPatch = branch === 'short1'
+      ? { status: 'RUNNING', from: recalculatedFrom, to: recalculatedTo, holdAmount: recalculatedFrom }
+      : branch === 'short'
+        ? { status: 'SHORTFALL_REVIEW', holdAmount: balanceLabel }
+        : { status: 'RUNNING', holdAmount: deal.from };
+    void run('confirm', () => confirmHold(deal, patch));
   }
 
   return (
     <>
       <BalanceBlock
-        balance={formatAmount(String(balance), deal.ticker)}
+        balance={formatAmount(balance, deal.ticker)}
         ticker={deal.ticker}
         dealAmount={deal.from}
-        shortfall={branch !== 'sufficient' ? `${formatAmount(String(dealAmount - balance), deal.ticker)} ${deal.ticker}` : undefined}
+        shortfall={branch !== 'sufficient' ? `${formatAmount(shortfall, deal.ticker)} ${deal.ticker}` : undefined}
         onTransfer={openTransferModal}
-        onLongPressBalance={cycleScenario}
+        onLongPressBalance={USE_REAL_API ? undefined : cycleScenario}
       />
 
       {branch === 'sufficient' && <Callout variant="neutral">{ru.dealDetail.calloutSufficient}</Callout>}
       {branch === 'short1' && (
         <Callout variant="warning">
-          {renderTemplate(ru.dealDetail.calloutShort1, { balance: balanceLabel, recalculated })}
+          {renderTemplate(ru.dealDetail.calloutShort1, { balance: recalculatedFrom, recalculated: recalculatedTo })}
         </Callout>
       )}
       {branch === 'short' && (
@@ -449,14 +612,15 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
         </Callout>
       )}
 
-      <Button variant="accent" loading={confirming} disabled={branch === 'belowmin'} onClick={() => void handleConfirm()}>
+      <Button variant="accent" loading={busy === 'confirm'} disabled={branch === 'belowmin' || !!busy} onClick={confirm}>
         {ru.dealDetail.confirmDealAction}
       </Button>
       <Button
         type="button"
         variant="link"
         danger
-        loading={declining}
+        loading={busy === 'decline'}
+        disabled={!!busy}
         onClick={() => setDeclineDialogOpen(true)}
       >
         {ru.dealDetail.declineAction}
@@ -467,75 +631,54 @@ function ConfirmationBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Dea
       <ConfirmDialog
         open={declineDialogOpen}
         title={ru.dealDetail.declineConfirmTitle}
-        onConfirm={() => void handleDecline()}
+        onConfirm={() => {
+          setDeclineDialogOpen(false);
+          // CANCEL: REJECT_QUOTE is only for a quote, here it would get 409.
+          void run('decline', () => cancelDeal(deal));
+        }}
         onCancel={() => setDeclineDialogOpen(false)}
       />
     </>
   );
 }
 
-function StatusHeroBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal) => void }) {
+function CancelLink({ deal, onUpdate, refresh }: BodyProps) {
+  const { busy, run } = useDealAction({ onUpdate, refresh });
+  const [dialogOpen, setDialogOpen] = useState(false);
+  return (
+    <>
+      <Button type="button" variant="link" danger loading={!!busy} onClick={() => setDialogOpen(true)}>
+        {ru.dealDetail.cancelRequestAction}
+      </Button>
+      <ConfirmDialog
+        open={dialogOpen}
+        title={ru.dealDetail.cancelRequestConfirmTitle}
+        onConfirm={() => {
+          setDialogOpen(false);
+          void run('cancel', () => cancelDeal(deal));
+        }}
+        onCancel={() => setDialogOpen(false)}
+      />
+    </>
+  );
+}
+
+function StatusHeroBody(props: BodyProps) {
+  const { deal, onUpdate, refresh } = props;
   const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-
-  async function handleRequestNewRate() {
-    setBusy(true);
-    try {
-      const updated = await requestNewRate(deal.id);
-      if (updated) {
-        onUpdate(updated);
-      }
-    } catch (err) {
-      showDealError(err, ru.common.errorGeneric);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleCancel() {
-    setCancelDialogOpen(false);
-    setBusy(true);
-    try {
-      const updated = await cancelDeal(deal.id);
-      if (updated) {
-        onUpdate(updated);
-      }
-    } catch (err) {
-      showDealError(err, ru.common.errorGeneric);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { busy, run } = useDealAction({ onUpdate, refresh });
+  const amounts = settledAmounts(deal);
 
   switch (deal.status) {
     case 'RATE_PENDING':
       return (
-        <>
-          <StatusHero
-            icon="spinner"
-            tone="pending"
-            title={ru.dealDetail.heroRatePendingTitle}
-            subtitle={ru.dealDetail.heroRatePendingSubtitle}
-            action={(
-              <Button
-                type="button"
-                variant="link"
-                danger
-                loading={busy}
-                onClick={() => setCancelDialogOpen(true)}
-              >
-                {ru.dealDetail.cancelRequestAction}
-              </Button>
-            )}
-          />
-          <ConfirmDialog
-            open={cancelDialogOpen}
-            title={ru.dealDetail.cancelRequestConfirmTitle}
-            onConfirm={() => void handleCancel()}
-            onCancel={() => setCancelDialogOpen(false)}
-          />
-        </>
+        <StatusHero
+          icon="spinner"
+          tone="pending"
+          title={ru.dealDetail.heroRatePendingTitle}
+          subtitle={ru.dealDetail.heroRatePendingSubtitle}
+          action={<CancelLink {...props}/>}
+        />
       );
     case 'RATE_STALE':
       return (
@@ -543,16 +686,36 @@ function StatusHeroBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal)
           icon="hourglass"
           tone="stale"
           title={ru.dealDetail.heroRateStaleTitle}
-          action={<Button variant="accent" loading={busy} onClick={() => void handleRequestNewRate()}>{ru.dealDetail.requestNewRateAction}</Button>}
+          action={(
+            <Button variant="accent" loading={!!busy} onClick={() => void run('request', () => requestNewRate(deal))}>
+              {ru.dealDetail.requestNewRateAction}
+            </Button>
+          )}
         />
       );
+    case 'SHORTFALL_REVIEW': {
+      const frozen = deal.holdAmount ?? deal.actualFrom ?? ru.common.tbd;
+      return (
+        <StatusHero
+          icon="spinner"
+          tone="pending"
+          title={ru.dealDetail.heroShortfallTitle}
+          subtitle={renderTemplate(
+            deal.repriceRejected ? ru.dealDetail.heroShortfallRejectedSubtitle : ru.dealDetail.heroShortfallSubtitle,
+            { amount: frozen },
+          )}
+          action={<CancelLink {...props}/>}
+        />
+      );
+    }
     case 'RUNNING':
+      // No cancel here: the desk is covering the volume (decision Р4).
       return (
         <StatusHero
           icon="spinner"
           tone="running"
           title={ru.dealDetail.heroRunningTitle}
-          subtitle={renderTemplate(ru.dealDetail.heroRunningSubtitle, { amount: deal.from })}
+          subtitle={renderTemplate(ru.dealDetail.heroRunningSubtitle, { amount: amounts.give })}
         />
       );
     case 'DONE':
@@ -561,7 +724,7 @@ function StatusHeroBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal)
           icon="check"
           tone="success"
           title={ru.dealDetail.heroDoneTitle}
-          subtitle={renderTemplate(ru.dealDetail.heroDoneSubtitle, { amount: deal.to ?? deal.from })}
+          subtitle={renderTemplate(ru.dealDetail.heroDoneSubtitle, { amount: amounts.receive ?? amounts.give })}
           // BRD FR-13.5: the mini app's only history is the OTC deals list.
           action={(
             <Button type="button" variant="link" className="status-hero__history" onClick={() => navigate('/deals')}>
@@ -578,41 +741,6 @@ function StatusHeroBody({ deal, onUpdate }: { deal: Deal; onUpdate: (deal: Deal)
           title={ru.dealDetail.heroDeclinedTitle}
           subtitle={ru.dealDetail.heroDeclinedSubtitle}
         />
-      );
-    case 'RATE_RENEGOTIATING':
-      // api-integration.md §7.6 — the backend's REQUOTE status has two real
-      // client-facing steps (accept/reject an adjusted amount, accept/reject
-      // a new rate) that have no screen yet: "designing the two missing
-      // screens is a separate task — flag it to the analyst, do not
-      // improvise them." `CANCEL` *is* wired for real (`cancelDeal`, same
-      // command RATE_PENDING uses) — the doc's own explicit MVP call was to
-      // offer only that, "honest and shippable," until those two screens exist.
-      return (
-        <>
-          <StatusHero
-            icon="spinner"
-            tone="pending"
-            title={ru.dealDetail.heroRenegotiatingTitle}
-            subtitle={ru.dealDetail.heroRenegotiatingSubtitle}
-            action={(
-              <Button
-                type="button"
-                variant="link"
-                danger
-                loading={busy}
-                onClick={() => setCancelDialogOpen(true)}
-              >
-                {ru.dealDetail.cancelRequestAction}
-              </Button>
-            )}
-          />
-          <ConfirmDialog
-            open={cancelDialogOpen}
-            title={ru.dealDetail.cancelRequestConfirmTitle}
-            onConfirm={() => void handleCancel()}
-            onCancel={() => setCancelDialogOpen(false)}
-          />
-        </>
       );
     default:
       return null;

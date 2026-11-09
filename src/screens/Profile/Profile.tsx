@@ -7,16 +7,17 @@ import { CopyIcon } from '@/components/CopyIcon/CopyIcon.tsx';
 import { SettingRow } from '@/components/SettingRow/SettingRow.tsx';
 import { PickerModal } from '@/components/PickerModal/PickerModal.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
-import { USE_REAL_API, getAccountCertificate, getUser } from '@/api/index.ts';
+import { ApiError, USE_REAL_API, getUser, openAccountCertificate } from '@/api/index.ts';
 import type { User } from '@/api/index.ts';
 import { useRequireSession, useSessionStore } from '@/store/session.ts';
 import { useSettingsStore } from '@/store/settings.ts';
 import { useToastStore } from '@/store/toast.ts';
+import { useUiStore } from '@/store/ui.ts';
 import { useCopy } from '@/lib/useCopy.ts';
 import { groupOf4 } from '@/lib/text.ts';
 import { maskEmail } from '@/lib/mask.ts';
 import { SAMPLE_DOCUMENT_URL } from '@/lib/sampleDocument.ts';
-import { notifyError, openExternalLink, openFetchedPdf } from '@/telegram/adapter.ts';
+import { notifyError, openExternalLink } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './Profile.css';
@@ -131,18 +132,19 @@ export function Profile() {
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
   const [themeModalOpen, setThemeModalOpen] = useState(false);
 
+  // Read again when the verification level changes: the badge follows it.
+  const userVersion = useUiStore((s) => s.userVersion);
   const load = useCallback(async () => {
     if (!session) {
       return;
     }
     setError(false);
-    setUser(undefined);
     try {
       setUser(await getUser(session.clientType));
     } catch {
       setError(true);
     }
-  }, [session]);
+  }, [session, userVersion]);
 
   useEffect(() => {
     void load();
@@ -155,9 +157,8 @@ export function Profile() {
 
   const [certificateLoading, setCertificateLoading] = useState(false);
 
-  // §8 — mock mode just opens the bundled sample PDF directly (nothing to
-  // load, no loading/error states to simulate). Real mode fetches the
-  // certificate as a file body (not a URL, question B13).
+  // Mock mode just opens the bundled sample PDF. Real mode asks for a signed
+  // link to the OTC account certificate (BRCE-4023 §7) and downloads it.
   async function handleCertificate() {
     if (!USE_REAL_API) {
       openExternalLink(SAMPLE_DOCUMENT_URL);
@@ -168,11 +169,13 @@ export function Profile() {
     }
     setCertificateLoading(true);
     try {
-      await openFetchedPdf(getAccountCertificate);
+      await openAccountCertificate();
     } catch (err) {
       console.error('[Profile] certificate failed to open', err);
       notifyError();
-      useToastStore.getState().show(ru.common.errorGeneric);
+      // 403: the client has no OTC access, so there is no OTC account to certify.
+      const noAccess = err instanceof ApiError && err.httpStatus === 403;
+      useToastStore.getState().show(noAccess ? ru.profile.certificateNoAccess : ru.common.errorGeneric);
     } finally {
       setCertificateLoading(false);
     }
