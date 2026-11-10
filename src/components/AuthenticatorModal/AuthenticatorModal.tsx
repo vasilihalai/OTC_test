@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Modal } from '@/components/Modal/Modal.tsx';
 import { CodeInput } from '@/components/CodeInput/CodeInput.tsx';
-import { Spinner } from '@/components/Spinner/Spinner.tsx';
+import { CodeStatus } from '@/components/CodeStatus/CodeStatus.tsx';
 import { notifyError, notifySuccess } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
@@ -55,10 +55,7 @@ export function AuthenticatorModal({ open, onClose, onSubmit, onVerified }: Auth
         error={!!error}
         disabled={verifying}
       />
-      {verifying && (
-        <p className="authenticator-modal__status"><Spinner size={16}/>{ru.verification.verifyingLabel}</p>
-      )}
-      {error && <p className="authenticator-modal__error">{error}</p>}
+      <CodeStatus verifying={verifying} error={error}/>
     </Modal>
   );
 }

@@ -27,6 +27,12 @@
   border: none;
   color: var(--accent);
   cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) ease;
+}
+
+.balance-block__transfer:active {
+  transform: scale(0.88);
+  opacity: 0.8;
 }
 
 .balance-block__amount {
@@ -38,6 +44,15 @@
   font-weight: 600;
   color: var(--text-body);
   user-select: none;
+}
+
+.balance-block__figure--updated {
+  animation: balance-block-updated 0.9s ease-out;
+}
+
+@keyframes balance-block-updated {
+  from { color: var(--text-primary); text-shadow: 0 0 14px rgba(255, 255, 255, 0.35); }
+  to { color: var(--text-body); text-shadow: 0 0 14px rgba(255, 255, 255, 0); }
 }
 
 .balance-block__ticker {

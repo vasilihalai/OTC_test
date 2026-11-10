@@ -1,25 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { Select } from '@/components/Select/Select.tsx';
 import { AmountField } from '@/components/AmountField/AmountField.tsx';
-import { SummaryCard } from '@/components/SummaryCard/SummaryCard.tsx';
+import { SummaryCard, SummaryCardSkeleton } from '@/components/SummaryCard/SummaryCard.tsx';
 import { CurrencyIcon } from '@/components/CurrencyIcon/CurrencyIcon.tsx';
 import { Button } from '@/components/Button/Button.tsx';
-import { Panel } from '@/components/Panel/Panel.tsx';
-import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
+import { FieldSkeleton } from '@/components/Skeleton/FieldSkeleton.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
-import { getAssets, getWithdrawFiatOptions } from '@/api/index.ts';
-import type { Asset, FiatWithdrawOptions } from '@/api/index.ts';
+import type { Asset } from '@/api/index.ts';
+import { FIAT_SUMMARY_LABELS, WithdrawFiatSkeleton } from '@/screens/WithdrawFiat/WithdrawFiatSkeleton.tsx';
 import type { WithdrawFiatRouteState } from '@/screens/WithdrawRequisites/WithdrawRequisites.tsx';
 import { useRequireSession } from '@/store/session.ts';
-import { useUiStore } from '@/store/ui.ts';
 import { useTransferModalStore } from '@/store/transferModal.ts';
 import { formatAmount } from '@/lib/money.ts';
+import { useAssets, useWithdrawFiatOptions } from '@/lib/queries.ts';
 import { notifyError } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './WithdrawFiat.css';
+
+const NO_ASSETS: Asset[] = [];
 
 /** Bakai Bank has its mark in the frames; every other bank gets the generic building. */
 function MethodIcon({ paymentType }: { paymentType: string }) {
@@ -48,48 +49,25 @@ export function WithdrawFiat() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselected = searchParams.get('asset');
-  const balancesVersion = useUiStore((s) => s.balancesVersion);
   const openTransferModal = useTransferModalStore((s) => s.open);
 
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [currency, setCurrency] = useState(preselected ?? '');
-  const [options, setOptions] = useState<FiatWithdrawOptions>();
-  const [paymentType, setPaymentType] = useState('');
+  // Coming from Home, the currencies are already in memory and the form opens complete; a transfer
+  // re-reads them on its own (`balancesChanged`).
+  const balances = useAssets();
+  const assets = balances.data?.fiat ?? NO_ASSETS;
+  const [chosenCurrency, setCurrency] = useState(preselected ?? '');
+  // The currency asked for is kept while the list loads (its methods load alongside) and whenever the
+  // account has it; otherwise the first one.
+  const currency = !balances.data || assets.some((a) => a.ticker === chosenCurrency) ? chosenCurrency : (assets[0]?.ticker ?? '');
+  const methods = useWithdrawFiatOptions(currency);
+  const options = methods.data;
+  const [chosenPaymentType, setPaymentType] = useState('');
+  // The first method until the client picks another one of this currency's.
+  const paymentType = options?.methods.some((m) => m.paymentType === chosenPaymentType)
+    ? chosenPaymentType
+    : (options?.methods[0]?.paymentType ?? '');
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState<string>();
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [assetsFailed, setAssetsFailed] = useState(false);
-  const [assetsAttempt, setAssetsAttempt] = useState(0);
-  const [optionsLoading, setOptionsLoading] = useState(false);
-  const [optionsFailed, setOptionsFailed] = useState(false);
-  const [optionsAttempt, setOptionsAttempt] = useState(0);
-
-  useEffect(() => {
-    setAssetsFailed(false);
-    void getAssets('fiat').then((data) => {
-      setAssets(data);
-      setCurrency((current) => (current && data.some((a) => a.ticker === current) ? current : (data[0]?.ticker ?? '')));
-    }).catch((err: unknown) => {
-      console.error('[WithdrawFiat] assets load failed', err);
-      setAssetsFailed(true);
-    }).finally(() => setInitialLoading(false));
-  }, [balancesVersion, assetsAttempt]);
-
-  useEffect(() => {
-    if (!currency) {
-      return;
-    }
-    setOptionsLoading(true);
-    setOptionsFailed(false);
-    void getWithdrawFiatOptions(currency).then((data) => {
-      setOptions(data);
-      setPaymentType((current) => (data.methods.some((m) => m.paymentType === current) ? current : (data.methods[0]?.paymentType ?? '')));
-    }).catch((err: unknown) => {
-      console.error('[WithdrawFiat] withdraw options load failed', err);
-      setOptions(undefined);
-      setOptionsFailed(true);
-    }).finally(() => setOptionsLoading(false));
-  }, [currency, optionsAttempt]);
 
   const asset = assets.find((a) => a.ticker === currency);
   const available = asset?.balance ?? '0';
@@ -140,30 +118,18 @@ export function WithdrawFiat() {
     navigate('/withdraw/fiat/requisites', { state });
   }
 
-  if (initialLoading) {
+  if (balances.failed) {
     return (
       <div className="withdraw-fiat">
-        <Skeleton height={48} radius={12}/>
-        <Skeleton height={48} radius={12}/>
-        <Panel fill="surface" radius="12px">
-          <Skeleton height={100} radius={8}/>
-        </Panel>
+        <div className="withdraw-fiat__scroll">
+          <LoadError message={ru.withdraw.assetsError} onRetry={() => void balances.refetch()}/>
+        </div>
       </div>
     );
   }
 
-  if (assetsFailed) {
-    return (
-      <div className="withdraw-fiat">
-        <LoadError
-          message={ru.withdraw.assetsError}
-          onRetry={() => {
-            setInitialLoading(true);
-            setAssetsAttempt((n) => n + 1);
-          }}
-        />
-      </div>
-    );
+  if (!balances.data) {
+    return <WithdrawFiatSkeleton/>;
   }
 
   return (
@@ -182,12 +148,12 @@ export function WithdrawFiat() {
           value={currency}
           onChange={setCurrency}
         />
-        {optionsLoading && <Skeleton height={56} radius={12}/>}
-        {optionsFailed && <LoadError message={ru.withdraw.methodsError} onRetry={() => setOptionsAttempt((n) => n + 1)}/>}
-        {!optionsLoading && options?.methods.length === 0 && (
-          <p className="withdraw-fiat__note">{ru.withdraw.noMethods}</p>
+        {methods.loading && <FieldSkeleton label={ru.withdraw.methodLabel}/>}
+        {methods.failed && <LoadError message={ru.withdraw.methodsError} onRetry={() => void methods.refetch()}/>}
+        {options?.methods.length === 0 && (
+          <p className="withdraw-fiat__note rise">{ru.withdraw.noMethods}</p>
         )}
-        {!optionsLoading && options && options.methods.length > 0 && (
+        {options && options.methods.length > 0 && (
           <Select
             label={ru.withdraw.methodLabel}
             layout="method"
@@ -210,6 +176,7 @@ export function WithdrawFiat() {
           onTransfer={openTransferModal}
         />
 
+        {methods.loading && <SummaryCardSkeleton labels={FIAT_SUMMARY_LABELS} totalLabel={ru.withdraw.totalDebitLabel}/>}
         {method && (
           <SummaryCard
             rows={[

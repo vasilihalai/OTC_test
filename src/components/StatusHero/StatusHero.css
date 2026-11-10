@@ -10,12 +10,21 @@
   background-position: top;
 }
 
+/* The card's contents arrive one after another: the icon, then the words, then what can be done. None
+   of this fills forwards — the action holds a confirm dialog, which a kept transform would trap. */
+.status-hero__title,
+.status-hero__subtitle,
+.status-hero__action {
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
+}
+
 .status-hero__title {
   margin: 12px 0 0;
   font-size: 16px;
   line-height: 24px;
   font-weight: 500;
   color: var(--text-strong);
+  animation-delay: 60ms;
 }
 
 .status-hero__subtitle {
@@ -24,6 +33,7 @@
   line-height: 20px;
   color: var(--text-muted);
   white-space: pre-line;
+  animation-delay: 110ms;
 }
 
 .status-hero__subtitle b {
@@ -34,6 +44,7 @@
 .status-hero__action {
   width: 100%;
   margin-top: 20px;
+  animation-delay: 160ms;
 }
 
 .status-hero__action .button--link {
@@ -76,15 +87,43 @@
 }
 
 .status-hero__spin {
-  animation: status-hero-spin 0.9s linear infinite;
+  animation: status-hero-spin 0.95s cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
 }
 
 @keyframes status-hero-spin {
   to { transform: rotate(360deg); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .status-hero__spin {
-    animation: none;
-  }
+/* Done and declined: the coin lands with a small bounce and its mark is drawn onto it. */
+.status-hero__medallion {
+  animation: status-hero-land 0.5s var(--ease-spring) backwards;
+}
+
+.status-hero__glyph {
+  stroke-dasharray: 1;
+  animation: status-hero-draw 0.32s var(--ease-out) 0.22s backwards;
+}
+
+@keyframes status-hero-land {
+  from { opacity: 0; transform: scale(0.55); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes status-hero-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* The quote ran out: the hourglass tips over and settles. */
+.status-hero__hourglass {
+  transform-origin: 50% 50%;
+  animation: status-hero-tip 0.7s var(--ease-out) backwards;
+}
+
+@keyframes status-hero-tip {
+  from { opacity: 0; transform: rotate(-180deg) scale(0.8); }
+  35% { opacity: 1; }
+  70% { transform: rotate(8deg) scale(1); }
+  to { opacity: 1; transform: rotate(0deg) scale(1); }
 }

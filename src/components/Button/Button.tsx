@@ -31,17 +31,14 @@ export function Button({ variant = 'primary', size = 'regular', danger, loading,
     <button
       className={classNames(b(variant, { loading, danger: !!danger, compact: size === 'compact' }), className)}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...rest}
     >
-      {loading ? (
-        <Spinner size={20}/>
-      ) : (
-        <>
-          {icon && <span className={e('icon')}>{icon}</span>}
-          <span className={e('label')}>{children}</span>
-          {variant === 'footer-link' && <span className={e('chevron')} aria-hidden="true"><ArrowIcon/></span>}
-        </>
-      )}
+      {icon && <span className={e('icon')}>{icon}</span>}
+      <span className={e('label')}>{children}</span>
+      {variant === 'footer-link' && <span className={e('chevron')} aria-hidden="true"><ArrowIcon/></span>}
+      {/* Over the label, which stays in place unseen: the button keeps its size while it works. */}
+      {loading && <span className={e('spinner')}><Spinner size={size === 'compact' ? 18 : 20}/></span>}
     </button>
   );
 }

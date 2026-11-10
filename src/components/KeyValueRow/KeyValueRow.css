@@ -31,15 +31,3 @@
   word-break: break-word;
 }
 
-.key-value-row__skeleton {
-  height: 14px;
-  width: 96px;
-  border-radius: 6px;
-  background: var(--bg-raised);
-  animation: key-value-row-skeleton-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes key-value-row-skeleton-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}

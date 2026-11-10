@@ -29,7 +29,15 @@ export default defineConfig({
     // Telegram Desktop's embedded webview lags behind mobile system webviews;
     // 'esnext' let syntax it can't parse (e.g. top-level await) through silently.
     target: 'es2020',
-    minify: 'terser'
+    minify: 'terser',
+    rollupOptions: {
+      treeshake: {
+        // The mock API's modules only build fixtures and an in-memory store. A real-mode build uses
+        // none of their exports, and with this it also drops the modules themselves instead of
+        // keeping them for their top-level code.
+        moduleSideEffects: (id) => !id.includes('/src/api/mock/'),
+      },
+    },
   },
   publicDir: './public',
   server: {

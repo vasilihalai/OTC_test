@@ -10,6 +10,7 @@ import type {
   User,
   WithdrawNetworkOption,
 } from '@/api/types.ts';
+import { mockLatencyOverride } from '@/lib/devSwitches.ts';
 
 export const MOCK_USERS: Record<ClientType, User> = {
   UL: {
@@ -452,7 +453,12 @@ export const MOCK_SAVED_REQUISITES: SavedRequisite[] = [
   },
 ];
 
-export function mockDelay(): Promise<void> {
-  const ms = 400 + Math.random() * 400;
+/**
+ * How long the mock "server" takes. A read answers in about a quarter of a second and an action in
+ * under half — enough for a loader to be seen, not enough to be waited on. `?latency=2000` (see
+ * `lib/devSwitches.ts`) makes every call take that long instead, to look at the loading states.
+ */
+export function mockDelay(kind: 'read' | 'write' = 'read'): Promise<void> {
+  const ms = mockLatencyOverride() ?? (kind === 'read' ? 180 + Math.random() * 140 : 320 + Math.random() * 160);
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

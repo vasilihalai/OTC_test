@@ -9,18 +9,20 @@ const [b, e] = bem('status-hero');
 export type StatusHeroIcon = 'spinner' | 'check' | 'cross' | 'hourglass';
 export type StatusHeroTone = 'success' | 'danger' | 'running' | 'stale' | 'pending';
 
+/** The frame's accent arc, on a faint ring so the circle it runs along is always there. */
 function SpinnerIcon() {
   return (
     <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className={e('spin')} aria-hidden="true">
+      <circle cx="24" cy="24" r="18" stroke="var(--accent)" strokeOpacity="0.16" strokeWidth="2.5"/>
       <path d="M24 6a18 18 0 1 0 18 18" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round"/>
     </svg>
   );
 }
 
-/** The silver coin behind the terminal-state glyphs, as in the OTC detail frames. */
+/** The silver coin behind the terminal-state glyphs, as in the OTC detail frames. The glyph is drawn on as it lands. */
 function Medallion({ id, glyph }: { id: string; glyph: string }) {
   return (
-    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className={e('medallion')} aria-hidden="true">
       <defs>
         <linearGradient id={`${id}-rim`} x1="8" y1="5" x2="40" y2="43" gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#FBFBFC"/>
@@ -38,8 +40,8 @@ function Medallion({ id, glyph }: { id: string; glyph: string }) {
       <circle cx="24" cy="24" r="22" fill={`url(#${id}-rim)`}/>
       <circle cx="24" cy="24" r="18" fill={`url(#${id}-face)`} stroke="#5D5F64" strokeOpacity="0.75"/>
       <circle cx="24" cy="24" r="19.25" stroke="#FFFFFF" strokeOpacity="0.55" strokeWidth="0.75"/>
-      <path d={glyph} transform="translate(0 0.75)" stroke="#55575C" strokeOpacity="0.55" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d={glyph} stroke="#FFFFFF" strokeWidth="3.25" strokeLinecap="round" strokeLinejoin="round"/>
+      <path className={e('glyph')} pathLength="1" d={glyph} transform="translate(0 0.75)" stroke="#55575C" strokeOpacity="0.55" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+      <path className={e('glyph')} pathLength="1" d={glyph} stroke="#FFFFFF" strokeWidth="3.25" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -55,7 +57,7 @@ function CrossIcon() {
 /** The chrome hourglass of the "Курс неактуален" frame. */
 function HourglassIcon() {
   return (
-    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className={e('hourglass')} aria-hidden="true">
       <defs>
         <linearGradient id="status-hero-glass" x1="10" y1="0" x2="38" y2="0" gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#F2F3F4"/>

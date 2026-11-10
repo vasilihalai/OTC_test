@@ -80,3 +80,9 @@
 .table-row__action:active .table-row__action-circle {
   transform: scale(0.9);
 }
+
+/* A flex column, so the bars' margins add up to the two text lines instead of collapsing. */
+.table-row__info--loading {
+  display: flex;
+  flex-direction: column;
+}

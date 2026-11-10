@@ -106,6 +106,11 @@ export interface Deal {
   /** Real mode only — "OTC-1047" etc. Falls back to `id` when absent (mock: the two were never distinct). */
   requestNumber?: string;
   status: DealStatus;
+  /**
+   * A list item whose backend status alone doesn't say which screen the deal is on (`QUOTED`, `REPRICE`):
+   * `status` is the list's best reading until the deal's card is read. The row shows a placeholder meanwhile.
+   */
+  statusPending?: boolean;
   date: string;
   direction: DealDirection;
   from: string;

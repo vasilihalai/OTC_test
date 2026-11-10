@@ -21,6 +21,13 @@
   /* A drag starting here has nowhere of its own to scroll — without this
      it could still chain up to the document (see index.css). */
   overscroll-behavior: none;
+  /* Comes up from under the screen edge when a tab screen opens. Nothing fixed lives inside it. */
+  animation: tab-bar-in 0.3s var(--ease-out) backwards;
+}
+
+@keyframes tab-bar-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
 .tab-bar__tab {
@@ -44,6 +51,16 @@
 
 .tab-bar__tab--active {
   color: var(--accent);
+}
+
+/* The tab just chosen: its icon gives a small bounce. */
+.tab-bar__tab--chosen svg {
+  animation: tab-bar-chosen 0.34s var(--ease-spring);
+}
+
+@keyframes tab-bar-chosen {
+  from { transform: scale(0.8); }
+  to { transform: scale(1); }
 }
 
 .tab-bar__label {

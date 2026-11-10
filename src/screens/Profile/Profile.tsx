@@ -1,18 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Panel } from '@/components/Panel/Panel.tsx';
 import { Button } from '@/components/Button/Button.tsx';
-import { CopyIcon } from '@/components/CopyIcon/CopyIcon.tsx';
+import { CopyButton } from '@/components/CopyButton/CopyButton.tsx';
 import { SettingRow } from '@/components/SettingRow/SettingRow.tsx';
 import { PickerModal } from '@/components/PickerModal/PickerModal.tsx';
 import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
-import { ApiError, USE_REAL_API, getUser, openAccountCertificate } from '@/api/index.ts';
-import type { User } from '@/api/index.ts';
+import { ApiError, USE_REAL_API, openAccountCertificate } from '@/api/index.ts';
 import { useRequireSession, useSessionStore } from '@/store/session.ts';
 import { useSettingsStore } from '@/store/settings.ts';
 import { useToastStore } from '@/store/toast.ts';
-import { useCopy } from '@/lib/useCopy.ts';
+import { useUser } from '@/lib/queries.ts';
 import { groupOf4 } from '@/lib/text.ts';
 import { maskEmail } from '@/lib/mask.ts';
 import { SAMPLE_DOCUMENT_URL } from '@/lib/sampleDocument.ts';
@@ -101,19 +99,19 @@ const THEME_OPTIONS = [
   { value: 'light' as const, label: ru.profile.themeLight },
 ];
 
-function DetailRow({ label, value, display, copyValue }: { label: string; value: string; display?: string; copyValue?: string }) {
-  const copy = useCopy();
+/** A label with its value under it. `value` is `undefined` while the profile loads: the label is already there, the value is a bar. */
+function DetailRow({ label, value, copyValue, placeholderWidth }: { label: string; value: string | undefined; copyValue?: string; placeholderWidth: number }) {
   return (
     <div className="profile__detail-row">
       <span className="profile__detail-label">{label}</span>
-      <span className="profile__detail-value">
-        <span className="profile__detail-text">{display ?? value}</span>
-        {copyValue && (
-          <button type="button" className="profile__copy" aria-label={ru.common.copyAction} onClick={() => copy(copyValue)}>
-            <CopyIcon/>
-          </button>
-        )}
-      </span>
+      {value === undefined ? (
+        <Skeleton width={placeholderWidth} height={12} line={20} radius={6}/>
+      ) : (
+        <span className="profile__detail-value reveal">
+          <span className="profile__detail-text">{value}</span>
+          {copyValue && <CopyButton value={copyValue}/>}
+        </span>
+      )}
     </div>
   );
 }
@@ -126,27 +124,10 @@ export function Profile() {
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
-  const [user, setUser] = useState<User>();
-  const [error, setError] = useState(false);
+  // The profile last seen is shown at once and refreshed underneath.
+  const { data: user, failed, refetch } = useUser(session?.clientType);
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
   const [themeModalOpen, setThemeModalOpen] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!session) {
-      return;
-    }
-    setError(false);
-    setUser(undefined);
-    try {
-      setUser(await getUser(session.clientType));
-    } catch {
-      setError(true);
-    }
-  }, [session]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   function handleSignOut() {
     clearSession();
@@ -179,63 +160,48 @@ export function Profile() {
     }
   }
 
-  // Sign-out must never depend on the profile loading.
-  const signOutRow = (
-    <div className="profile__panel2">
-      <SettingRow icon={<LogoutIcon/>} label={ru.profile.signOutAction} danger onClick={handleSignOut}/>
-    </div>
-  );
-
-  if (error) {
-    return (
-      <div className="profile">
-        <Panel>
-          <p className="profile__error">{ru.profile.errorTitle}</p>
-          <Button variant="secondary" onClick={() => void load()}>{ru.profile.retryAction}</Button>
-        </Panel>
-        {signOutRow}
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="profile">
-        <div className="profile__panel1">
-          <Skeleton width={160} height={24}/>
-          <div className="profile__details-card">
-            <Skeleton height={120} radius={8}/>
-          </div>
-        </div>
-        {signOutRow}
-      </div>
-    );
-  }
-
+  // Everything that doesn't come from the server is on screen from the first frame — the settings, the
+  // certificate button and sign-out, which must never depend on the profile loading. Only the name
+  // and the three values wait, as bars in their own places.
   return (
     <div className="profile">
       <div className="profile__panel1">
-        {(user.clientName || user.verified) && (
-          <div className="profile__title-row">
-            {user.clientName && <h1 className="profile__name">{user.clientName}</h1>}
-            {user.verified && (
-              <span className="profile__verified-badge">
-                <VerifiedIcon/>
-                {ru.profile.verifiedBadge}
-              </span>
-            )}
+        {failed ? (
+          <div className="profile__error rise" role="alert">
+            <p>{ru.profile.errorTitle}</p>
+            <Button variant="secondary" onClick={() => void refetch()}>{ru.profile.retryAction}</Button>
           </div>
+        ) : (
+          <>
+            {!user && (
+              <div className="profile__title-row" aria-hidden="true">
+                <Skeleton width={152} height={14} line={24} radius={6}/>
+                <Skeleton width={124} height={24} radius={12}/>
+              </div>
+            )}
+            {user && (user.clientName || user.verified) && (
+              <div className="profile__title-row reveal">
+                {user.clientName && <h1 className="profile__name">{user.clientName}</h1>}
+                {user.verified && (
+                  <span className="profile__verified-badge">
+                    <VerifiedIcon/>
+                    {ru.profile.verifiedBadge}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="profile__details-card">
+              <DetailRow label={ru.profile.emailRow} value={user && maskEmail(user.email)} copyValue={user?.email} placeholderWidth={156}/>
+              <DetailRow label={ru.profile.userIdRow} value={user && groupOf4(user.userId)} copyValue={user?.userId} placeholderWidth={232}/>
+              <DetailRow label={ru.profile.phoneRow} value={user?.phone} placeholderWidth={128}/>
+            </div>
+
+            <Button variant="secondary" size="compact" loading={certificateLoading} onClick={() => void handleCertificate()}>
+              {ru.profile.certificateAction}
+            </Button>
+          </>
         )}
-
-        <div className="profile__details-card">
-          <DetailRow label={ru.profile.emailRow} value={user.email} display={maskEmail(user.email)} copyValue={user.email}/>
-          <DetailRow label={ru.profile.userIdRow} value={user.userId} display={groupOf4(user.userId)} copyValue={user.userId}/>
-          <DetailRow label={ru.profile.phoneRow} value={user.phone}/>
-        </div>
-
-        <Button variant="secondary" size="compact" loading={certificateLoading} onClick={() => void handleCertificate()}>
-          {ru.profile.certificateAction}
-        </Button>
       </div>
 
       <div className="profile__panel2">
@@ -252,8 +218,8 @@ export function Profile() {
           onClick={() => setThemeModalOpen(true)}
         />
         <div className="profile__divider"/>
-        <SettingRow icon={<FaqIcon/>} label={ru.profile.faqRow} onClick={() => openExternalLink(user.faqUrl)}/>
-        <SettingRow icon={<AboutIcon/>} label={ru.profile.aboutRow} onClick={() => openExternalLink(user.aboutUrl)}/>
+        <SettingRow icon={<FaqIcon/>} label={ru.profile.faqRow} onClick={() => user && openExternalLink(user.faqUrl)}/>
+        <SettingRow icon={<AboutIcon/>} label={ru.profile.aboutRow} onClick={() => user && openExternalLink(user.aboutUrl)}/>
         <div className="profile__spacer"/>
         <SettingRow icon={<LogoutIcon/>} label={ru.profile.signOutAction} danger onClick={handleSignOut}/>
       </div>

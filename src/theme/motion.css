@@ -1,0 +1,40 @@
+/* Shared keyframes and the classes screens put on what appears. Only `transform` and `opacity` move,
+   so everything runs on the compositor. None of these fill forwards: a transform left on an element
+   would trap the fixed-position modals rendered inside it. */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Loaded content taking a skeleton's place: it is already where it belongs, so it only fades. */
+.reveal {
+  animation: fade-in 0.24s var(--ease-out) backwards;
+}
+
+/* Something new on the screen, with no placeholder before it. */
+.rise {
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
+}
+
+/* A list arriving: rows follow one another. Rows keep their keys between refreshes, so this plays once. */
+.stagger > * {
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
+}
+
+.stagger > :nth-child(2) { animation-delay: 30ms; }
+.stagger > :nth-child(3) { animation-delay: 60ms; }
+.stagger > :nth-child(4) { animation-delay: 90ms; }
+.stagger > :nth-child(5) { animation-delay: 120ms; }
+.stagger > :nth-child(6) { animation-delay: 150ms; }
+.stagger > :nth-child(n + 7) { animation-delay: 180ms; }

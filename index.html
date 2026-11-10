@@ -1,12 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/>
-    <meta name="theme-color" content="#000000"/>
-    <title>Telegram Mini App</title>
+    <meta name="theme-color" content="#0C0E12"/>
+    <meta name="color-scheme" content="dark"/>
+    <title>xRuby OTC</title>
     <!-- Boot splash: visible from the first paint until React's first render replaces #root's
-         content — covers the JS download and the silent Telegram sign-in, which can take seconds. -->
+         content — covers the JS download and, on a first launch, the silent Telegram sign-in. The
+         mark and the running line are the app's own full-screen loader (BrandLoader), so the splash
+         turns into the app without a seam. -->
     <style>
       html, body { margin: 0; height: 100%; background: #0C0E12; }
       .boot-splash {
@@ -16,31 +19,48 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 20px;
-        color: #fff;
-        font: 600 18px/1 -apple-system, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+        gap: 24px;
         animation: boot-splash-in 0.3s ease-out;
       }
-      .boot-splash__brand { display: inline-flex; align-items: center; gap: 8px; }
-      .boot-splash__mark { width: 10px; height: 10px; border-radius: 50%; background: #C51625; }
-      .boot-splash__spinner {
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        border: 2px solid #94979C;
-        border-top-color: transparent;
-        animation: boot-splash-spin 0.7s linear infinite;
+      .boot-splash__mark { border-radius: 9px; animation: boot-splash-breathe 1.8s ease-in-out infinite; }
+      .boot-splash__bar {
+        position: relative;
+        width: 96px;
+        height: 3px;
+        border-radius: 3px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.08);
+        transform: translateZ(0);
       }
-      @keyframes boot-splash-spin { to { transform: rotate(360deg); } }
+      .boot-splash__bar::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 3px;
+        background: #C51625;
+        transform: translateX(-100%);
+        animation: boot-splash-run 1.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+      }
       @keyframes boot-splash-in { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes boot-splash-breathe {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.72; transform: scale(0.94); }
+      }
+      @keyframes boot-splash-run {
+        0% { transform: translateX(-100%) scaleX(0.4); }
+        50% { transform: translateX(0) scaleX(0.7); }
+        100% { transform: translateX(100%) scaleX(0.4); }
+      }
     </style>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <noscript>Для работы приложения включите JavaScript.</noscript>
     <div id="root">
       <div class="boot-splash" role="status" aria-label="Загрузка">
-        <span class="boot-splash__brand"><span class="boot-splash__mark"></span>XRuby</span>
-        <span class="boot-splash__spinner"></span>
+        <svg class="boot-splash__mark" width="40" height="40" viewBox="0 0 30 30" aria-hidden="true">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M30 0H0V30H30V0ZM11 5H5V11L9 15L5 19V25H11L15 21L19 25H25V19L21 15L25 11V5H19L15 9L11 5Z" fill="#C51625"/>
+        </svg>
+        <span class="boot-splash__bar"></span>
       </div>
     </div>
     <script src="/src/index.tsx" type="module"></script>

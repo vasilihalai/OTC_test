@@ -3,22 +3,18 @@ import { useEffect, useState } from 'react';
 import { Modal } from '@/components/Modal/Modal.tsx';
 import { CodeInput } from '@/components/CodeInput/CodeInput.tsx';
 import { Button } from '@/components/Button/Button.tsx';
-import { Spinner } from '@/components/Spinner/Spinner.tsx';
+import { CodeStatus } from '@/components/CodeStatus/CodeStatus.tsx';
+import { ApiError, mapApiError } from '@/api/index.ts';
+import { formatClock } from '@/lib/countdown.ts';
 import { maskEmail } from '@/lib/mask.ts';
 import { RateLimitedError } from '@/lib/rateLimitedError.ts';
+import { useResendCountdown } from '@/lib/useResendCountdown.ts';
 import { notifyError, notifySuccess } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './VerificationModal.css';
 
-const RESEND_SECONDS = 59;
 const LOCKOUT_SECONDS = 30;
-
-function formatCountdown(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (seconds % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
 
 export interface VerificationModalProps {
   open: boolean;
@@ -34,7 +30,8 @@ export function VerificationModal({ open, email, onClose, onSubmit, onResend, on
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
   const [verifying, setVerifying] = useState(false);
-  const [resendCountdown, setResendCountdown] = useState(RESEND_SECONDS);
+  const [resending, setResending] = useState(false);
+  const { secondsLeft, restart } = useResendCountdown(open);
   const [lockoutCountdown, setLockoutCountdown] = useState(0);
 
   useEffect(() => {
@@ -43,17 +40,9 @@ export function VerificationModal({ open, email, onClose, onSubmit, onResend, on
     }
     setCode('');
     setError(undefined);
-    setResendCountdown(RESEND_SECONDS);
+    restart();
     setLockoutCountdown(0);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || resendCountdown <= 0) {
-      return;
-    }
-    const timer = setInterval(() => setResendCountdown((s) => s - 1), 1000);
-    return () => clearInterval(timer);
-  }, [open, resendCountdown > 0]);
+  }, [open, restart]);
 
   useEffect(() => {
     if (lockoutCountdown <= 0) {
@@ -85,10 +74,20 @@ export function VerificationModal({ open, email, onClose, onSubmit, onResend, on
   }
 
   async function handleResend() {
-    await onResend();
-    setCode('');
-    setError(undefined);
-    setResendCountdown(RESEND_SECONDS);
+    setResending(true);
+    try {
+      await onResend();
+      setCode('');
+      setError(undefined);
+      restart();
+    } catch (err) {
+      // Used to go unhandled: the button did nothing and said nothing.
+      console.error('[VerificationModal] resend failed', err);
+      notifyError();
+      setError(err instanceof ApiError ? mapApiError(err) : ru.common.errorGeneric);
+    } finally {
+      setResending(false);
+    }
   }
 
   const locked = lockoutCountdown > 0 || verifying;
@@ -102,11 +101,12 @@ export function VerificationModal({ open, email, onClose, onSubmit, onResend, on
         <Button
           type="button"
           variant="secondary"
-          disabled={resendCountdown > 0}
+          disabled={secondsLeft > 0}
+          loading={resending}
           onClick={() => void handleResend()}
         >
-          {resendCountdown > 0
-            ? `${ru.verification.resendAction} ${formatCountdown(resendCountdown)}`
+          {secondsLeft > 0
+            ? `${ru.verification.resendAction} ${formatClock(secondsLeft)}`
             : ru.verification.resendAction}
         </Button>
       )}
@@ -121,10 +121,7 @@ export function VerificationModal({ open, email, onClose, onSubmit, onResend, on
         error={!!error}
         disabled={locked}
       />
-      {verifying && (
-        <p className="verification-modal__status"><Spinner size={16}/>{ru.verification.verifyingLabel}</p>
-      )}
-      {error && <p className="verification-modal__error">{error}</p>}
+      <CodeStatus verifying={verifying} error={error}/>
     </Modal>
   );
 }

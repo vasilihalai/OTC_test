@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-import { Panel } from '@/components/Panel/Panel.tsx';
 import { HintTooltip } from '@/components/HintTooltip/HintTooltip.tsx';
 import { Select } from '@/components/Select/Select.tsx';
 import { TextField } from '@/components/TextField/TextField.tsx';
@@ -10,25 +9,25 @@ import { SummaryCard } from '@/components/SummaryCard/SummaryCard.tsx';
 import { CurrencyIcon } from '@/components/CurrencyIcon/CurrencyIcon.tsx';
 import { WarningPanel } from '@/components/WarningPanel/WarningPanel.tsx';
 import { Button } from '@/components/Button/Button.tsx';
-import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
+import { FieldSkeleton } from '@/components/Skeleton/FieldSkeleton.tsx';
+import { Spinner } from '@/components/Spinner/Spinner.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import { TwoFactorGate } from '@/components/TwoFactorGate/TwoFactorGate.tsx';
-import { QrScannerModal } from '@/components/QrScannerModal/QrScannerModal.tsx';
 import {
   ApiError,
   confirmWithdrawOtp,
-  getAssets,
-  getWithdrawCryptoOptions,
   getWithdrawCryptoQuote,
   issueWithdrawOtp,
   mapApiError,
 } from '@/api/index.ts';
-import type { Asset, CryptoWithdrawOptions, WithdrawOtpSource, WithdrawQuote } from '@/api/index.ts';
+import type { Asset, WithdrawOtpSource, WithdrawQuote } from '@/api/index.ts';
+import { WithdrawCryptoSkeleton } from '@/screens/WithdrawCrypto/WithdrawCryptoSkeleton.tsx';
 import { useRequireSession } from '@/store/session.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { useTransferModalStore } from '@/store/transferModal.ts';
 import { formatAmount } from '@/lib/money.ts';
 import { extractAddressFromQr, isValidCryptoAddress } from '@/lib/cryptoAddress.ts';
+import { useAssets, useWithdrawCryptoOptions } from '@/lib/queries.ts';
 import { RateLimitedError } from '@/lib/rateLimitedError.ts';
 import { notifyError } from '@/telegram/adapter.ts';
 import { showWithdrawalAccepted } from '@/lib/withdrawalToast.ts';
@@ -36,7 +35,14 @@ import { ru } from '@/i18n/ru.ts';
 
 import './WithdrawCrypto.css';
 
-const QUOTE_DEBOUNCE_MS = 500;
+// The scanner brings a QR decoder several times the size of this screen, and most withdrawals never
+// open it: it is fetched when the client reaches for the camera button.
+const loadQrScanner = () => import('@/components/QrScannerModal/QrScannerModal.tsx');
+const QrScannerModal = lazy(() => loadQrScanner().then((module) => ({ default: module.QrScannerModal })));
+
+const NO_ASSETS: Asset[] = [];
+
+const QUOTE_DEBOUNCE_MS = 400;
 // A typed address is judged once the user pauses, not on every keystroke.
 const ADDRESS_CHECK_DELAY_MS = 700;
 
@@ -67,17 +73,22 @@ export function WithdrawCrypto() {
   const [searchParams] = useSearchParams();
   const preselected = searchParams.get('asset');
   const bumpBalancesVersion = useUiStore((s) => s.bumpBalancesVersion);
-  const balancesVersion = useUiStore((s) => s.balancesVersion);
 
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [assetsFailed, setAssetsFailed] = useState(false);
-  const [assetsAttempt, setAssetsAttempt] = useState(0);
-  const [ticker, setTicker] = useState(preselected ?? '');
-  const [options, setOptions] = useState<CryptoWithdrawOptions>();
-  const [optionsLoading, setOptionsLoading] = useState(false);
-  const [optionsFailed, setOptionsFailed] = useState(false);
-  const [optionsAttempt, setOptionsAttempt] = useState(0);
-  const [networkId, setNetworkId] = useState('');
+  // Coming from Home, the assets are already in memory and the form opens complete; a transfer or a
+  // withdrawal re-reads them on its own (`balancesChanged`).
+  const balances = useAssets();
+  const assets = balances.data?.crypto ?? NO_ASSETS;
+  const [chosenTicker, setChosenTicker] = useState(preselected ?? '');
+  // The asset asked for is kept while the list loads (its networks load alongside) and whenever the
+  // account has it; otherwise the first one.
+  const ticker = !balances.data || assets.some((a) => a.ticker === chosenTicker) ? chosenTicker : (assets[0]?.ticker ?? '');
+  const networks = useWithdrawCryptoOptions(ticker);
+  const options = networks.data;
+  const [chosenNetworkId, setChosenNetworkId] = useState('');
+  // The first network until the client picks another one of this asset's.
+  const networkId = options?.networks.some((n) => n.currencyNetworkId === chosenNetworkId)
+    ? chosenNetworkId
+    : (options?.networks[0]?.currencyNetworkId ?? '');
   const [manualAddress, setManualAddress] = useState('');
   const [addressError, setAddressError] = useState<string>();
   const [qrOpen, setQrOpen] = useState(false);
@@ -87,43 +98,10 @@ export function WithdrawCrypto() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const withdrawalId = useRef<string>();
-  const [initialLoading, setInitialLoading] = useState(true);
   const [otpOpen, setOtpOpen] = useState(false);
   const [otpSource, setOtpSource] = useState<WithdrawOtpSource>('email');
 
   const address = manualAddress.trim();
-
-  useEffect(() => {
-    setAssetsFailed(false);
-    void getAssets('crypto').then((data) => {
-      setAssets(data);
-      setTicker((current) => (current && data.some((a) => a.ticker === current) ? current : (data[0]?.ticker ?? '')));
-    }).catch((err: unknown) => {
-      console.error('[WithdrawCrypto] assets load failed', err);
-      setAssetsFailed(true);
-    }).finally(() => setInitialLoading(false));
-  }, [balancesVersion, assetsAttempt]);
-
-  useEffect(() => {
-    if (!ticker) {
-      return;
-    }
-    setOptionsLoading(true);
-    setOptionsFailed(false);
-    // Address/amount are cleared by handleTickerChange on a user's switch — not here, or an address
-    // pasted while the first network list is still loading would be wiped when it lands.
-    void getWithdrawCryptoOptions(ticker).then((data) => {
-      setOptions(data);
-      setNetworkId(data.networks[0]?.currencyNetworkId ?? '');
-      setQuote(undefined);
-    }).catch((err: unknown) => {
-      // Used to fail silently: no network selected, so no quote and a permanently disabled button.
-      console.error('[WithdrawCrypto] withdraw options load failed', err);
-      setOptions(undefined);
-      setNetworkId('');
-      setOptionsFailed(true);
-    }).finally(() => setOptionsLoading(false));
-  }, [ticker, optionsAttempt]);
 
   const asset = assets.find((a) => a.ticker === ticker);
   const available = asset?.balance ?? '0';
@@ -204,8 +182,10 @@ export function WithdrawCrypto() {
     }
   }
 
+  // The address and the amount belong to the asset they were entered for. (Not cleared when the
+  // networks arrive: an address pasted while they load must stay.)
   function handleTickerChange(value: string) {
-    setTicker(value);
+    setChosenTicker(value);
     setManualAddress('');
     setAmount('');
   }
@@ -296,30 +276,18 @@ export function WithdrawCrypto() {
     navigate('/home', { replace: true });
   }
 
-  if (initialLoading) {
+  if (balances.failed) {
     return (
       <div className="withdraw-crypto">
-        <Skeleton height={48} radius={12}/>
-        <Skeleton height={48} radius={12}/>
-        <Panel fill="surface" radius="12px">
-          <Skeleton height={100} radius={8}/>
-        </Panel>
+        <div className="withdraw-crypto__scroll">
+          <LoadError message={ru.withdraw.assetsError} onRetry={() => void balances.refetch()}/>
+        </div>
       </div>
     );
   }
 
-  if (assetsFailed) {
-    return (
-      <div className="withdraw-crypto">
-        <LoadError
-          message={ru.withdraw.assetsError}
-          onRetry={() => {
-            setInitialLoading(true);
-            setAssetsAttempt((n) => n + 1);
-          }}
-        />
-      </div>
-    );
+  if (!balances.data) {
+    return <WithdrawCryptoSkeleton/>;
   }
 
   const limit = smallestLimit(quote);
@@ -360,6 +328,8 @@ export function WithdrawCrypto() {
               <button
                 type="button"
                 className="withdraw-crypto__qr-button"
+                // The finger is down on the camera button: start fetching the scanner before the tap ends.
+                onPointerDown={() => void loadQrScanner().catch(() => undefined)}
                 onClick={() => setQrOpen(true)}
                 aria-label={ru.withdraw.qrScannerTitle}
               >
@@ -368,19 +338,19 @@ export function WithdrawCrypto() {
             )}
           />
         </div>
-        {optionsLoading && <Skeleton height={48} radius={12}/>}
-        {optionsFailed && <LoadError message={ru.withdraw.optionsError} onRetry={() => setOptionsAttempt((n) => n + 1)}/>}
-        {!optionsLoading && options?.networks.length === 0 && (
-          <p className="withdraw-crypto__note">{ru.withdraw.noNetworks}</p>
+        {networks.loading && <FieldSkeleton label={ru.withdraw.networkLabel}/>}
+        {networks.failed && <LoadError message={ru.withdraw.optionsError} onRetry={() => void networks.refetch()}/>}
+        {options?.networks.length === 0 && (
+          <p className="withdraw-crypto__note rise">{ru.withdraw.noNetworks}</p>
         )}
         {/* §5.1: hide the selector when there's exactly one network — this now falls out naturally from the real network list length, not a hardcoded BTC check. */}
-        {!optionsLoading && options && options.networks.length > 1 && (
+        {options && options.networks.length > 1 && (
           <Select
             label={ru.withdraw.networkLabel}
             layout="plain"
             options={options.networks.map((n) => ({ value: n.currencyNetworkId, label: n.networkLabel }))}
             value={networkId}
-            onChange={setNetworkId}
+            onChange={setChosenNetworkId}
           />
         )}
 
@@ -399,6 +369,7 @@ export function WithdrawCrypto() {
 
         {quote && (
           <SummaryCard
+            className="rise"
             rows={[
               { key: 'min', label: ru.withdraw.minAmountLabel, value: `${ru.withdraw.minAmountPrefix} ${formatAmount(quote.minimalAmount, ticker)} ${ticker}` },
               ...(limit
@@ -437,7 +408,11 @@ export function WithdrawCrypto() {
         onResend={handleOtpResend}
         onVerified={handleOtpVerified}
       />
-      <QrScannerModal open={qrOpen} onClose={() => setQrOpen(false)} onScan={handleQrScan}/>
+      {qrOpen && (
+        <Suspense fallback={<div className="withdraw-crypto__scanner-wait"><Spinner size={28}/></div>}>
+          <QrScannerModal open onClose={() => setQrOpen(false)} onScan={handleQrScan}/>
+        </Suspense>
+      )}
     </div>
   );
 }

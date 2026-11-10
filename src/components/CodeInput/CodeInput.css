@@ -18,7 +18,7 @@
   line-height: 1;
   font-weight: 400;
   text-align: center;
-  transition: border-color 0.15s ease, transform 0.1s ease;
+  transition: border-color 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
 }
 
 .code-input__cell::placeholder {
@@ -33,6 +33,16 @@
 
 .code-input__cell:disabled {
   opacity: 0.5;
+}
+
+/* A digit landing in its cell. */
+.code-input__cell--filled {
+  animation: code-input-filled 0.18s var(--ease-out);
+}
+
+@keyframes code-input-filled {
+  from { transform: scale(1.1); }
+  to { transform: scale(1); }
 }
 
 .code-input--invalid .code-input__cell {

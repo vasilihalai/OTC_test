@@ -5,6 +5,7 @@
   display: flex;
   flex-direction: column;
   background: #000;
+  animation: fade-in 0.2s ease-out;
 }
 
 /* This is a full-screen overlay outside the normal app shell, so it can't
@@ -65,6 +66,39 @@
   border: 2px solid #fff;
   border-radius: 16px;
   box-shadow: 0 0 0 2000px rgba(0, 0, 0, .45);
+  overflow: hidden;
+}
+
+/* The camera is live and looking: a line runs down the frame and back. */
+.qr-scanner-modal__beam {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--brand-mark) 20%, var(--brand-mark) 80%, transparent);
+  opacity: 0;
+}
+
+.qr-scanner-modal__frame--scanning .qr-scanner-modal__beam {
+  opacity: 1;
+  animation: qr-scanner-beam 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes qr-scanner-beam {
+  from { transform: translateY(8px); }
+  to { transform: translateY(min(calc(70vw - 12px), 248px)); }
+}
+
+/* Waiting for the camera (or for the permission prompt). */
+.qr-scanner-modal__waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
 }
 
 .qr-scanner-modal__denied {

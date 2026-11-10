@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { bem } from '@/css/bem.ts';
 import { ru } from '@/i18n/ru.ts';
 import { DealsIcon, HomeIcon, ProfileIcon } from '@/components/TabBar/icons.tsx';
+import { hapticSelection } from '@/telegram/adapter.ts';
 
 import './TabBar.css';
 
@@ -17,6 +19,16 @@ const TABS = [
 export function TabBar() {
   const location = useLocation();
   const navigate = useNavigate();
+  // Only a tab the user has just tapped gets the little bounce — not the one the bar opens on.
+  const [chosen, setChosen] = useState<string>();
+
+  function open(path: string) {
+    if (path !== location.pathname) {
+      hapticSelection();
+      setChosen(path);
+      navigate(path);
+    }
+  }
 
   return (
     <nav className={b()}>
@@ -26,8 +38,9 @@ export function TabBar() {
           <button
             key={path}
             type="button"
-            className={e('tab', { active })}
-            onClick={() => navigate(path)}
+            className={e('tab', { active, chosen: active && chosen === path })}
+            aria-current={active ? 'page' : undefined}
+            onClick={() => open(path)}
           >
             <Icon/>
             <span className={e('label')}>{label}</span>

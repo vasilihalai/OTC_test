@@ -296,6 +296,7 @@ export const ru = {
     errorGeneric: 'Что-то пошло не так',
     retryAction: 'Повторить',
     updateTelegram: 'Обновите Telegram',
+    unsupportedClient: 'Эта версия приложения Telegram не поддерживает мини-приложение. Обновите Telegram и откройте его снова.',
     copiedToast: 'Скопировано',
     copyAction: 'Скопировать',
     confirmYes: 'Да',

@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import { getUser } from '@/api/index.ts';
 import type { Session } from '@/api/types.ts';
 import { clearTokens } from '@/api/real/http/tokenStore.ts';
+import { clearQueries } from '@/lib/query.ts';
+import { useUser } from '@/lib/queries.ts';
 
 interface SessionStore {
   session: Session | null;
@@ -21,7 +22,9 @@ interface SessionStore {
  * `tokenStore.hydrateTokensFromStorage()` (called once at boot, real mode
  * only) separately restores the actual credential. `clearSession` clears
  * both — it's the single "log this device out locally" action, used both by
- * an explicit sign-out and by `http.ts`'s failed-refresh fallback.
+ * an explicit sign-out and by `http.ts`'s failed-refresh fallback. It also
+ * empties the screens' data cache (`lib/query.ts`), so nothing of this
+ * account can show up under the next one.
  */
 export const useSessionStore = create<SessionStore>()(
   persist(
@@ -30,6 +33,7 @@ export const useSessionStore = create<SessionStore>()(
       setSession: (session) => set({ session }),
       clearSession: () => {
         clearTokens();
+        clearQueries();
         set({ session: null });
       },
     }),
@@ -51,26 +55,19 @@ export function useRequireSession(): Session | null {
   return session;
 }
 
-/** Redirects to `/otc-unavailable` when the account's OTC access isn't granted. */
+/**
+ * Redirects to `/otc-unavailable` when the account's OTC access isn't granted. Reads the same user the
+ * screen itself shows, so the check costs no request of its own; a failed read doesn't redirect on a
+ * guess — the screen's own load surfaces it.
+ */
 export function useRequireOtcAccess(): void {
   const session = useSessionStore((s) => s.session);
   const navigate = useNavigate();
+  const access = useUser(session?.clientType).data?.otcAccess;
 
   useEffect(() => {
-    if (!session) {
-      return;
+    if (session && access && access !== 'GRANTED') {
+      navigate('/otc-unavailable', { replace: true, state: { otcAccess: access } });
     }
-    let cancelled = false;
-    void getUser(session.clientType).then((user) => {
-      if (!cancelled && user.otcAccess !== 'GRANTED') {
-        navigate('/otc-unavailable', { replace: true, state: { otcAccess: user.otcAccess } });
-      }
-    }).catch((err: unknown) => {
-      // The screen's own load surfaces the failure; don't redirect on a guess.
-      console.error('[session] OTC access check failed', err);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [session, navigate]);
+  }, [session, access, navigate]);
 }

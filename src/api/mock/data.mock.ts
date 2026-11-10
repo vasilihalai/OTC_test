@@ -42,9 +42,10 @@ export async function getStats(): Promise<Stats> {
   return MOCK_STATS;
 }
 
+/** A copy, as a real answer would be: the store's own array is changed in place by the mock actions. */
 export async function getDeals(): Promise<Deal[]> {
   await mockDelay();
-  return listDeals();
+  return [...listDeals()];
 }
 
 export async function getDealById(id: string): Promise<Deal | undefined> {

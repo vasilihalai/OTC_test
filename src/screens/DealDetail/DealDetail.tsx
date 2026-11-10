@@ -3,15 +3,13 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
 import { KeyValueRow } from '@/components/KeyValueRow/KeyValueRow.tsx';
-import { StatusChip } from '@/components/StatusChip/StatusChip.tsx';
 import { StatusHero } from '@/components/StatusHero/StatusHero.tsx';
-import { BalanceBlock } from '@/components/BalanceBlock/BalanceBlock.tsx';
+import { BalanceBlock, BalanceBlockSkeleton } from '@/components/BalanceBlock/BalanceBlock.tsx';
 import { Callout } from '@/components/Callout/Callout.tsx';
-import { RequisitesPanel } from '@/components/RequisitesPanel/RequisitesPanel.tsx';
+import { RequisitesPanel, RequisitesPanelSkeleton } from '@/components/RequisitesPanel/RequisitesPanel.tsx';
 import { DocumentRow } from '@/components/DocumentRow/DocumentRow.tsx';
 import { Button } from '@/components/Button/Button.tsx';
 import { ConfirmDialog } from '@/components/ConfirmDialog/ConfirmDialog.tsx';
-import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import {
   ApiError,
@@ -23,9 +21,6 @@ import {
   cancelDeal,
   confirmHold,
   expireQuote,
-  getAccounts,
-  getDealById,
-  getDealRequisites,
   mapApiError,
   openDealDocument,
   rejectQuote,
@@ -34,12 +29,13 @@ import {
   requestNewRate,
   setDepositBalanceForTesting,
 } from '@/api/index.ts';
-import type { ConfirmDealPatch, Deal, DealDocument, DealDocumentKind, Requisites } from '@/api/index.ts';
+import type { ConfirmDealPatch, Deal, DealDocument, DealDocumentKind } from '@/api/index.ts';
+import { DIRECTION_LABEL, DealHeader, DealPlaceholder } from '@/screens/DealDetail/DealDetailSkeleton.tsx';
 import { useRequireSession } from '@/store/session.ts';
 import { useToastStore } from '@/store/toast.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { useTransferModalStore } from '@/store/transferModal.ts';
-import { DEAL_STATUS_META, getDetailRows, isTerminalDealStatus } from '@/lib/dealStatus.ts';
+import { getDetailRows, isTerminalDealStatus } from '@/lib/dealStatus.ts';
 import {
   computeScenarioBalance,
   decimalString,
@@ -50,6 +46,7 @@ import {
 } from '@/lib/balanceScenario.ts';
 import { formatAmount, parseAmountWithTicker } from '@/lib/money.ts';
 import { formatCountdown, msUntil } from '@/lib/countdown.ts';
+import { dealChanged, useAccounts, useDeal, useDealRequisites } from '@/lib/queries.ts';
 import { usePolling } from '@/lib/usePolling.ts';
 import { renderTemplate } from '@/lib/template.tsx';
 import { SAMPLE_DOCUMENT_URL } from '@/lib/sampleDocument.ts';
@@ -57,12 +54,6 @@ import { notifyError, openExternalLink } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './DealDetail.css';
-
-const DIRECTION_LABEL: Record<Deal['direction'], string> = {
-  BUY: ru.deals.directionBuy,
-  SELL: ru.deals.directionSell,
-  EXCHANGE: ru.deals.directionExchange,
-};
 
 const DOCUMENT_NAMES: Record<DealDocumentKind, string> = {
   accept: ru.dealDetail.documentAccept,
@@ -78,6 +69,9 @@ const DOCUMENT_ORDER: DealDocumentKind[] = ['accept', 'payment', 'certificate'];
  * and at once when the app comes back to the foreground.
  */
 const POLL_MS = 20_000;
+
+/** The last stretch of a quote's life, when its timer starts to pulse. */
+const TIMER_URGENT_MS = 30_000;
 
 function showDealError(err: unknown, fallback: string) {
   console.error('[DealDetail] action failed', err);
@@ -109,6 +103,8 @@ function useDealAction({ onUpdate, refresh }: Pick<BodyProps, 'onUpdate' | 'refr
       if (updated) {
         onUpdate(updated);
       }
+      // The list, the dashboard counters and the balances are re-read when their screens open.
+      dealChanged();
     } catch (err) {
       showDealError(err, ru.common.errorGeneric);
       refresh();
@@ -172,62 +168,20 @@ function settledAmounts(deal: Deal): { give: string; receive: string | null } {
 export function DealDetail() {
   useRequireSession();
   const { id } = useParams();
-  const [deal, setDeal] = useState<Deal>();
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  // A slow poll must not overwrite what a later action already showed: every read is numbered when
-  // it starts, and only one newer than the last shown is applied.
-  const started = useRef(0);
-  const shown = useRef(0);
-
-  const showDeal = useCallback((data: Deal) => {
-    started.current += 1;
-    shown.current = started.current;
-    setDeal(data);
-  }, []);
-
-  useEffect(() => {
-    if (!id) {
-      return;
-    }
-    setLoading(true);
-    setNotFound(false);
-    setFailed(false);
-    void getDealById(id).then((data) => {
-      if (data) {
-        showDeal(data);
-      } else {
-        setNotFound(true);
-      }
-    }).catch((err: unknown) => {
-      console.error('[DealDetail] deal load failed', err);
-      setFailed(true);
-    }).finally(() => setLoading(false));
-  }, [id, attempt, showDeal]);
+  // The card last seen (within a minute) is shown at once and re-read underneath. A slow poll can't
+  // overwrite what a later action already showed: reads are numbered, and only one newer than what
+  // is on screen is applied (`lib/query.ts`).
+  const { deal, preview, notFound, failed, refresh, show } = useDeal(id);
 
   // A failed re-read is simply retried by the next one.
-  const refresh = useCallback(() => {
-    if (!id) {
-      return;
-    }
-    started.current += 1;
-    const mine = started.current;
-    void getDealById(id).then((data) => {
-      if (data && mine > shown.current) {
-        shown.current = mine;
-        setDeal(data);
-      }
-    }).catch(() => undefined);
-  }, [id]);
+  const refreshCard = useCallback(() => void refresh(), [refresh]);
 
-  usePolling(refresh, POLL_MS, USE_REAL_API && !!deal && !isTerminalDealStatus(deal.status));
+  usePolling(refreshCard, POLL_MS, USE_REAL_API && !!deal && !isTerminalDealStatus(deal.status));
 
-  if (failed && !deal) {
+  if (failed) {
     return (
       <div className="deal-detail">
-        <LoadError message={ru.dealDetail.loadError} onRetry={() => setAttempt((n) => n + 1)}/>
+        <LoadError message={ru.dealDetail.loadError} onRetry={refreshCard}/>
       </div>
     );
   }
@@ -235,58 +189,87 @@ export function DealDetail() {
   if (notFound) {
     return (
       <div className="deal-detail">
-        <p className="deal-detail__not-found">{ru.dealDetail.notFound}</p>
+        <p className="deal-detail__not-found rise">{ru.dealDetail.notFound}</p>
       </div>
     );
   }
 
-  const meta = deal && DEAL_STATUS_META[deal.status];
-  const detailRows = deal && getDetailRows(deal.status);
-  const bodyProps = deal && { deal, onUpdate: showDeal, refresh };
-  const amounts = deal && settledAmounts(deal);
+  if (!deal) {
+    // What the list said about the deal fills the header; the rest keeps its shape until the card is in.
+    return (
+      <div className="deal-detail">
+        <DealHeader deal={preview}/>
+        <DealPlaceholder preview={preview}/>
+      </div>
+    );
+  }
+
+  const detailRows = getDetailRows(deal.status);
+  const bodyProps = { deal, onUpdate: show, refresh: refreshCard };
+  const amounts = settledAmounts(deal);
 
   return (
     <div className="deal-detail">
-      <div className="deal-detail__header">
-        {loading ? <Skeleton width={120} height={26}/> : <h1 className="deal-detail__id">{deal?.requestNumber ?? deal?.id}</h1>}
-        {deal && meta && <StatusChip tone={deal.status} size="lg">{meta.detailLabel}</StatusChip>}
+      <DealHeader deal={deal}/>
+
+      {/* Keyed by the status: the card of a new stage arrives, it doesn't swap in place. */}
+      <div key={deal.status} className="deal-detail__body rise">
+        <DealBody {...bodyProps}/>
       </div>
-      {deal && <p className="deal-detail__direction">{DIRECTION_LABEL[deal.direction]}</p>}
 
-      {loading && (
-        <Panel fill="surface" radius="16px">
-          <Skeleton height={90} radius={14}/>
-        </Panel>
-      )}
+      <div className="deal-detail__section reveal">
+        <h2 className="deal-detail__section-title">{ru.dealDetail.detailsTitle}</h2>
+        {deal.date && <KeyValueRow label={ru.dealDetail.createdDateLabel} value={deal.date}/>}
+        <KeyValueRow label={ru.dealDetail.directionLabel} value={DIRECTION_LABEL[deal.direction]}/>
+        {detailRows.give && (
+          <KeyValueRow
+            label={deal.status === 'SHORTFALL_REVIEW' ? ru.dealDetail.dealAmountLabel : ru.dealDetail.giveLabel}
+            value={amounts.give}
+          />
+        )}
+        {detailRows.hold && (deal.holdAmount ?? deal.actualFrom) && (
+          <KeyValueRow label={ru.dealDetail.holdLabel} value={deal.holdAmount ?? deal.actualFrom}/>
+        )}
+        {detailRows.receive && <KeyValueRow label={ru.dealDetail.receiveLabel} value={amounts.receive ?? ru.common.tbd}/>}
+        {detailRows.rate && (
+          <KeyValueRow
+            label={ru.dealDetail.rateLabel}
+            value={deal.status === 'RATE_PENDING' || deal.status === 'RATE_STALE' ? ru.common.tbd : (deal.rate ?? ru.common.tbd)}
+          />
+        )}
+      </div>
 
-      {bodyProps && <DealBody {...bodyProps}/>}
-
-      {deal && detailRows && amounts && (
-        <div className="deal-detail__section">
-          <h2 className="deal-detail__section-title">{ru.dealDetail.detailsTitle}</h2>
-          {deal.date && <KeyValueRow label={ru.dealDetail.createdDateLabel} value={deal.date}/>}
-          <KeyValueRow label={ru.dealDetail.directionLabel} value={DIRECTION_LABEL[deal.direction]}/>
-          {detailRows.give && (
-            <KeyValueRow
-              label={deal.status === 'SHORTFALL_REVIEW' ? ru.dealDetail.dealAmountLabel : ru.dealDetail.giveLabel}
-              value={amounts.give}
-            />
-          )}
-          {detailRows.hold && (deal.holdAmount ?? deal.actualFrom) && (
-            <KeyValueRow label={ru.dealDetail.holdLabel} value={deal.holdAmount ?? deal.actualFrom}/>
-          )}
-          {detailRows.receive && <KeyValueRow label={ru.dealDetail.receiveLabel} value={amounts.receive ?? ru.common.tbd}/>}
-          {detailRows.rate && (
-            <KeyValueRow
-              label={ru.dealDetail.rateLabel}
-              value={deal.status === 'RATE_PENDING' || deal.status === 'RATE_STALE' ? ru.common.tbd : (deal.rate ?? ru.common.tbd)}
-            />
-          )}
-        </div>
-      )}
-
-      {bodyProps && <DealDocuments {...bodyProps}/>}
+      <DealDocuments {...bodyProps}/>
     </div>
+  );
+}
+
+/** A danger link that asks before it acts: "Отклонить" and "Отменить заявку" on every card. */
+function ConfirmedLink({ label, title, body, loading, disabled, onConfirm }: {
+  label: string;
+  title: string;
+  body?: string;
+  loading: boolean;
+  disabled: boolean;
+  onConfirm: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button type="button" variant="link" danger loading={loading} disabled={disabled} onClick={() => setOpen(true)}>
+        {label}
+      </Button>
+      <ConfirmDialog
+        open={open}
+        title={title}
+        body={body}
+        onConfirm={() => {
+          setOpen(false);
+          onConfirm();
+        }}
+        onCancel={() => setOpen(false)}
+      />
+    </>
   );
 }
 
@@ -337,7 +320,7 @@ function DealDocuments({ deal, onUpdate, refresh }: BodyProps) {
   }
 
   return (
-    <div className="deal-detail__section">
+    <div className="deal-detail__section reveal">
       <h2 className="deal-detail__section-title">{ru.dealDetail.documentsTitle}</h2>
       {DOCUMENT_ORDER.map((kind) => {
         const document: DealDocument | undefined = deal.documents?.find((item) => item.kind === kind);
@@ -359,7 +342,6 @@ function DealDocuments({ deal, onUpdate, refresh }: BodyProps) {
 function QuoteCard({ deal, onUpdate, refresh }: BodyProps) {
   const remainingMs = useCountdown(deal.quoteExpiresAt);
   const { busy, run } = useDealAction({ onUpdate, refresh });
-  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
   useExpiry(deal, remainingMs, { onUpdate, refresh });
 
   return (
@@ -371,7 +353,7 @@ function QuoteCard({ deal, onUpdate, refresh }: BodyProps) {
         {deal.rateUnitLabel && <span className="quote-card__rate-unit"> {deal.rateUnitLabel}</span>}
       </p>
       <p className="quote-card__countdown">
-        {ru.dealDetail.quoteFixedLabel} <span className="quote-card__timer">{formatCountdown(remainingMs)} {ru.dealDetail.quoteSecondsSuffix}</span>
+        {ru.dealDetail.quoteFixedLabel} <Timer remainingMs={remainingMs}/>
       </p>
       <div className="quote-card__rows">
         <KeyValueRow label={ru.dealDetail.giveLabel} value={deal.from}/>
@@ -380,19 +362,24 @@ function QuoteCard({ deal, onUpdate, refresh }: BodyProps) {
       <Button variant="accent" loading={busy === 'accept'} disabled={!!busy} onClick={() => void run('accept', () => acceptQuote(deal))}>
         {ru.dealDetail.confirmDealAction}
       </Button>
-      <Button type="button" variant="link" danger loading={busy === 'decline'} disabled={!!busy} onClick={() => setDeclineDialogOpen(true)}>
-        {ru.dealDetail.declineAction}
-      </Button>
-      <ConfirmDialog
-        open={declineDialogOpen}
+      <ConfirmedLink
+        label={ru.dealDetail.declineAction}
         title={ru.dealDetail.declineConfirmTitle}
-        onConfirm={() => {
-          setDeclineDialogOpen(false);
-          void run('decline', () => rejectQuote(deal));
-        }}
-        onCancel={() => setDeclineDialogOpen(false)}
+        loading={busy === 'decline'}
+        disabled={!!busy}
+        onConfirm={() => void run('decline', () => rejectQuote(deal))}
       />
     </div>
+  );
+}
+
+/** The quote's countdown. Its last half-minute pulses: the figure alone doesn't say "hurry". */
+function Timer({ remainingMs }: { remainingMs: number }) {
+  const urgent = remainingMs > 0 && remainingMs <= TIMER_URGENT_MS;
+  return (
+    <span className={urgent ? 'quote-card__timer quote-card__timer--urgent' : 'quote-card__timer'}>
+      {formatCountdown(remainingMs)} {ru.dealDetail.quoteSecondsSuffix}
+    </span>
   );
 }
 
@@ -404,7 +391,6 @@ function QuoteCard({ deal, onUpdate, refresh }: BodyProps) {
 function TermsCard({ deal, onUpdate, refresh }: BodyProps) {
   const remainingMs = useCountdown(deal.quoteExpiresAt);
   const { busy, run } = useDealAction({ onUpdate, refresh });
-  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
   useExpiry(deal, remainingMs, { onUpdate, refresh });
 
   const previous = deal.previous;
@@ -421,7 +407,7 @@ function TermsCard({ deal, onUpdate, refresh }: BodyProps) {
       <p className="quote-card__prepared">{ru.dealDetail.termsPrepared}</p>
       {deal.quoteExpiresAt && (
         <p className="quote-card__countdown quote-card__countdown--top">
-          {ru.dealDetail.termsValidLabel} <span className="quote-card__timer">{formatCountdown(remainingMs)} {ru.dealDetail.quoteSecondsSuffix}</span>
+          {ru.dealDetail.termsValidLabel} <Timer remainingMs={remainingMs}/>
         </p>
       )}
       <div className="quote-card__rows">
@@ -448,18 +434,13 @@ function TermsCard({ deal, onUpdate, refresh }: BodyProps) {
       <Button variant="accent" loading={busy === 'accept'} disabled={!!busy} onClick={() => void run('accept', () => acceptTerms(deal))}>
         {acceptLabel}
       </Button>
-      <Button type="button" variant="link" danger loading={busy === 'decline'} disabled={!!busy} onClick={() => setDeclineDialogOpen(true)}>
-        {ru.dealDetail.declineAction}
-      </Button>
-      <ConfirmDialog
-        open={declineDialogOpen}
+      <ConfirmedLink
+        label={ru.dealDetail.declineAction}
         title={ru.dealDetail.rejectTermsConfirmTitle}
         body={ru.dealDetail.rejectTermsConfirmBody}
-        onConfirm={() => {
-          setDeclineDialogOpen(false);
-          void run('decline', () => rejectTerms(deal));
-        }}
-        onCancel={() => setDeclineDialogOpen(false)}
+        loading={busy === 'decline'}
+        disabled={!!busy}
+        onConfirm={() => void run('decline', () => rejectTerms(deal))}
       />
     </div>
   );
@@ -471,7 +452,6 @@ function TermsCard({ deal, onUpdate, refresh }: BodyProps) {
  */
 function RepriceCard({ deal, onUpdate, refresh }: BodyProps) {
   const { busy, run } = useDealAction({ onUpdate, refresh });
-  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
   const reprice = deal.reprice;
 
   return (
@@ -490,18 +470,13 @@ function RepriceCard({ deal, onUpdate, refresh }: BodyProps) {
       <Button variant="accent" loading={busy === 'accept'} disabled={!!busy} onClick={() => void run('accept', () => acceptReprice(deal))}>
         {ru.dealDetail.acceptNewRateAction}
       </Button>
-      <Button type="button" variant="link" danger loading={busy === 'decline'} disabled={!!busy} onClick={() => setDeclineDialogOpen(true)}>
-        {ru.dealDetail.declineAction}
-      </Button>
-      <ConfirmDialog
-        open={declineDialogOpen}
+      <ConfirmedLink
+        label={ru.dealDetail.declineAction}
         title={ru.dealDetail.rejectRepriceConfirmTitle}
         body={ru.dealDetail.rejectRepriceConfirmBody}
-        onConfirm={() => {
-          setDeclineDialogOpen(false);
-          void run('decline', () => rejectReprice(deal));
-        }}
-        onCancel={() => setDeclineDialogOpen(false)}
+        loading={busy === 'decline'}
+        disabled={!!busy}
+        onConfirm={() => void run('decline', () => rejectReprice(deal))}
       />
     </div>
   );
@@ -522,41 +497,23 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
   const openTransferModal = useTransferModalStore((s) => s.open);
   // null = no dev override, show the real deposit balance.
   const scenario = USE_REAL_API ? null : (isBalanceScenario(urlScenario) ? urlScenario : storeScenario);
-  const [requisites, setRequisites] = useState<Requisites>();
-  const [requisitesFailed, setRequisitesFailed] = useState(false);
-  const [requisitesAttempt, setRequisitesAttempt] = useState(0);
-  const [accountBalance, setAccountBalance] = useState<string>();
-  const [balanceFailed, setBalanceFailed] = useState(false);
-  const [balanceAttempt, setBalanceAttempt] = useState(0);
   const { busy, run } = useDealAction({ onUpdate, refresh });
-  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
 
   const amount = deal.amount ?? String(parseAmountValue(deal.from));
   const minAmount = deal.minAmount ?? '0';
   // The card's balance is the server's own figure; the deposit balance is only a fallback for a card without one.
   const cardBalance = USE_REAL_API ? deal.balance : undefined;
-  const balance = cardBalance ?? accountBalance;
+  const accounts = useAccounts(cardBalance === undefined);
+  const refetchAccounts = accounts.refetch;
+  const balance = cardBalance ?? (accounts.data && decimalString(Number(accounts.data.deposit[deal.ticker] ?? '0')));
   const branch = balance === undefined ? undefined : holdBranch(balance, amount, minAmount);
   const showRequisites = branch === 'short' || branch === 'belowmin';
 
-  // Read once, and only when the panel is shown (the method isn't meant for polling); a failure offers a
-  // retry in the panel's place.
-  useEffect(() => {
-    if (!showRequisites || requisites) {
-      return;
-    }
-    setRequisitesFailed(false);
-    void getDealRequisites(deal.id).then((data) => {
-      if (data) {
-        setRequisites(data);
-      } else {
-        setRequisitesFailed(true);
-      }
-    }).catch((err: unknown) => {
-      console.error('[DealDetail] requisites load failed', err);
-      setRequisitesFailed(true);
-    });
-  }, [deal.id, showRequisites, requisites, requisitesAttempt]);
+  // Read once per visit, and only from the moment the panel first shows (the method isn't meant for
+  // polling); a failure offers a retry in the panel's place.
+  const requisitesWanted = useRef(false);
+  requisitesWanted.current ||= showRequisites;
+  const requisites = useDealRequisites(deal.id, requisitesWanted.current);
 
   // A transfer between the client's accounts changes the card's balance: re-read it at once, and once
   // more a few seconds later in case the balance landed after the transfer's own answer.
@@ -570,32 +527,21 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
     return () => clearTimeout(again);
   }, [balancesVersion, refresh]);
 
-  // Explicit dev override only — forces the mock deposit balance to whatever produces the requested case.
+  // Explicit dev override only — forces the mock deposit balance to whatever produces the requested
+  // case, then reads it. (A transfer re-reads it by itself: `balancesChanged` in lib/queries.ts.)
   useEffect(() => {
     if (!scenario) {
       return;
     }
     const target = computeScenarioBalance(Number(amount), Number(minAmount), scenario);
     setDepositBalanceForTesting(deal.ticker, target);
-  }, [scenario, deal.ticker, amount, minAmount]);
-
-  useEffect(() => {
-    if (cardBalance !== undefined) {
-      return;
-    }
-    setBalanceFailed(false);
-    void getAccounts()
-      .then((accounts) => setAccountBalance(decimalString(Number(accounts.deposit[deal.ticker] ?? '0'))))
-      .catch((err: unknown) => {
-        console.error('[DealDetail] balance load failed', err);
-        setBalanceFailed(true);
-      });
-  }, [cardBalance, deal.ticker, scenario, balancesVersion, balanceAttempt]);
+    void refetchAccounts();
+  }, [scenario, deal.ticker, amount, minAmount, refetchAccounts]);
 
   if (balance === undefined || branch === undefined) {
-    return balanceFailed
-      ? <LoadError message={ru.home.balancesError} onRetry={() => setBalanceAttempt((n) => n + 1)}/>
-      : <Skeleton height={90} radius={14}/>;
+    return accounts.failed
+      ? <LoadError message={ru.home.balancesError} onRetry={() => void refetchAccounts()}/>
+      : <BalanceBlockSkeleton dealAmount={deal.from}/>;
   }
 
   const shortfall = deal.missingAmount && Number(deal.missingAmount) > 0 ? deal.missingAmount : shortfallOf(balance, amount);
@@ -628,19 +574,20 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
         onLongPressBalance={USE_REAL_API ? undefined : cycleScenario}
       />
 
-      {branch === 'sufficient' && <Callout variant="neutral">{ru.dealDetail.calloutSufficient}</Callout>}
+      {/* Keyed, so a balance that moves the deal into another case brings that case's note in anew. */}
+      {branch === 'sufficient' && <Callout key={branch} variant="neutral">{ru.dealDetail.calloutSufficient}</Callout>}
       {branch === 'short1' && (
-        <Callout variant="warning">
+        <Callout key={branch} variant="warning">
           {renderTemplate(ru.dealDetail.calloutShort1, { balance: recalculatedFrom, recalculated: recalculatedTo })}
         </Callout>
       )}
       {branch === 'short' && (
-        <Callout variant="warning">
+        <Callout key={branch} variant="warning">
           {renderTemplate(ru.dealDetail.calloutShort, { balance: balanceLabel })}
         </Callout>
       )}
       {branch === 'belowmin' && (
-        <Callout variant="danger">
+        <Callout key={branch} variant="danger">
           {renderTemplate(ru.dealDetail.calloutBelowMin, { min: minLabel })}
         </Callout>
       )}
@@ -648,67 +595,42 @@ function ConfirmationBody({ deal, onUpdate, refresh }: BodyProps) {
       <Button variant="accent" loading={busy === 'confirm'} disabled={branch === 'belowmin' || !!busy} onClick={confirm}>
         {ru.dealDetail.confirmDealAction}
       </Button>
-      <Button
-        type="button"
-        variant="link"
-        danger
+      <ConfirmedLink
+        label={ru.dealDetail.declineAction}
+        title={ru.dealDetail.declineConfirmTitle}
         loading={busy === 'decline'}
         disabled={!!busy}
-        onClick={() => setDeclineDialogOpen(true)}
-      >
-        {ru.dealDetail.declineAction}
-      </Button>
+        // CANCEL: REJECT_QUOTE is only for a quote, here it would get 409.
+        onConfirm={() => void run('decline', () => cancelDeal(deal))}
+      />
 
       {showRequisites && (
-        requisites ? <RequisitesPanel requisites={requisites}/>
-          : requisitesFailed ? (
-            <Panel fill="surface" radius="16px">
+        requisites.data ? <RequisitesPanel requisites={requisites.data}/>
+          : requisites.failed ? (
+            <Panel fill="surface" radius="16px" className="rise">
               <h2 className="deal-detail__requisites-title">{ru.dealDetail.requisitesTitle}</h2>
-              <LoadError message={ru.dealDetail.requisitesError} onRetry={() => setRequisitesAttempt((n) => n + 1)}/>
+              <LoadError message={ru.dealDetail.requisitesError} onRetry={() => void requisites.refetch()}/>
             </Panel>
-          ) : <Skeleton height={200} radius={16}/>
+          ) : <RequisitesPanelSkeleton/>
       )}
-
-      <ConfirmDialog
-        open={declineDialogOpen}
-        title={ru.dealDetail.declineConfirmTitle}
-        onConfirm={() => {
-          setDeclineDialogOpen(false);
-          // CANCEL: REJECT_QUOTE is only for a quote, here it would get 409.
-          void run('decline', () => cancelDeal(deal));
-        }}
-        onCancel={() => setDeclineDialogOpen(false)}
-      />
     </>
   );
 }
 
-function CancelLink({ deal, onUpdate, refresh, disabled = false }: BodyProps & { disabled?: boolean }) {
-  const { busy, run } = useDealAction({ onUpdate, refresh });
-  const [dialogOpen, setDialogOpen] = useState(false);
-  return (
-    <>
-      <Button type="button" variant="link" danger loading={!!busy} disabled={disabled} onClick={() => setDialogOpen(true)}>
-        {ru.dealDetail.cancelRequestAction}
-      </Button>
-      <ConfirmDialog
-        open={dialogOpen}
-        title={ru.dealDetail.cancelRequestConfirmTitle}
-        onConfirm={() => {
-          setDialogOpen(false);
-          void run('cancel', () => cancelDeal(deal));
-        }}
-        onCancel={() => setDialogOpen(false)}
-      />
-    </>
-  );
-}
-
-function StatusHeroBody(props: BodyProps) {
-  const { deal, onUpdate, refresh } = props;
+function StatusHeroBody({ deal, onUpdate, refresh }: BodyProps) {
   const navigate = useNavigate();
+  // One action at a time for the whole card: while one of its buttons works, the other waits.
   const { busy, run } = useDealAction({ onUpdate, refresh });
   const amounts = settledAmounts(deal);
+  const cancelLink = (
+    <ConfirmedLink
+      label={ru.dealDetail.cancelRequestAction}
+      title={ru.dealDetail.cancelRequestConfirmTitle}
+      loading={busy === 'cancel'}
+      disabled={!!busy}
+      onConfirm={() => void run('cancel', () => cancelDeal(deal))}
+    />
+  );
 
   switch (deal.status) {
     case 'RATE_PENDING':
@@ -718,7 +640,7 @@ function StatusHeroBody(props: BodyProps) {
           tone="pending"
           title={ru.dealDetail.heroRatePendingTitle}
           subtitle={ru.dealDetail.heroRatePendingSubtitle}
-          action={<CancelLink {...props}/>}
+          action={cancelLink}
         />
       );
     case 'RATE_STALE':
@@ -730,10 +652,10 @@ function StatusHeroBody(props: BodyProps) {
           // The cancel link isn't in the frame: without it a client couldn't drop a deal whose quote ran out.
           action={(
             <>
-              <Button variant="accent" loading={!!busy} onClick={() => void run('request', () => requestNewRate(deal))}>
+              <Button variant="accent" loading={busy === 'request'} disabled={!!busy} onClick={() => void run('request', () => requestNewRate(deal))}>
                 {ru.dealDetail.requestNewRateAction}
               </Button>
-              <CancelLink {...props} disabled={!!busy}/>
+              {cancelLink}
             </>
           )}
         />
@@ -749,7 +671,7 @@ function StatusHeroBody(props: BodyProps) {
             deal.repriceRejected ? ru.dealDetail.heroShortfallRejectedSubtitle : ru.dealDetail.heroShortfallSubtitle,
             { amount: frozen },
           )}
-          action={<CancelLink {...props}/>}
+          action={cancelLink}
         />
       );
     }

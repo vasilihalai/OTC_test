@@ -1,10 +1,11 @@
 .spinner {
   display: inline-block;
   flex-shrink: 0;
-  border-radius: 50%;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  animation: spinner-spin 0.7s linear infinite;
+  animation: spinner-spin 0.75s linear infinite;
+}
+
+.spinner__track {
+  opacity: 0.2;
 }
 
 @keyframes spinner-spin {

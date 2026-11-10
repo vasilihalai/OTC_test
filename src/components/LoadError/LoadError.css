@@ -3,7 +3,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  animation: load-error-in 0.2s ease-out;
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
 }
 
 .load-error__text {
@@ -20,7 +20,3 @@
   padding-inline: 20px;
 }
 
-@keyframes load-error-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}

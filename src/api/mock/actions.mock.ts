@@ -24,19 +24,19 @@ function adjustDeposit(holdAmount: string | undefined, sign: 1 | -1): void {
 
 /** ACCEPT_QUOTE: the quote is fixed and the deal waits for the top-up and the hold. */
 export async function acceptQuote(id: string): Promise<Deal | undefined> {
-  await mockDelay();
+  await mockDelay('write');
   return updateDeal(id, { status: 'AWAITING_FUNDS', quoteExpiresAt: undefined });
 }
 
 export async function confirmDeal(id: string, patch: ConfirmDealPatch): Promise<Deal | undefined> {
-  await mockDelay();
+  await mockDelay('write');
   adjustDeposit(patch.holdAmount, -1);
   return updateDeal(id, patch);
 }
 
 /** REJECT_QUOTE on a first quote, or CANCEL: a frozen amount goes back to the deposit account. */
 export async function declineDeal(id: string): Promise<Deal | undefined> {
-  await mockDelay();
+  await mockDelay('write');
   const deal = findDeal(id);
   if (deal && (deal.status === 'RUNNING' || deal.status === 'SHORTFALL_REVIEW' || deal.status === 'REPRICE_PROPOSED')) {
     adjustDeposit(deal.holdAmount, 1);
@@ -46,7 +46,7 @@ export async function declineDeal(id: string): Promise<Deal | undefined> {
 
 /** The operator's new terms are taken: back to the top-up screen with them. */
 export async function acceptTerms(id: string): Promise<Deal | undefined> {
-  await mockDelay();
+  await mockDelay('write');
   return updateDeal(id, { status: 'AWAITING_FUNDS', previous: undefined, quoteExpiresAt: undefined });
 }
 
@@ -62,20 +62,20 @@ function restorePreviousTerms(id: string): Deal | undefined {
 }
 
 export async function rejectTerms(id: string): Promise<Deal | undefined> {
-  await mockDelay();
+  await mockDelay('write');
   return restorePreviousTerms(id);
 }
 
 /** The new rate on the frozen amount is taken: the deal executes at it. */
 export async function acceptReprice(id: string): Promise<Deal | undefined> {
-  await mockDelay();
+  await mockDelay('write');
   const reprice = findDeal(id)?.reprice;
   return updateDeal(id, { status: 'RUNNING', ...(reprice ?? {}), reprice: undefined });
 }
 
 /** The new rate is declined: back to the operator's decision on the shortfall. */
 export async function rejectReprice(id: string): Promise<Deal | undefined> {
-  await mockDelay();
+  await mockDelay('write');
   return updateDeal(id, { status: 'SHORTFALL_REVIEW', reprice: undefined, repriceRejected: true });
 }
 
@@ -84,7 +84,7 @@ export async function rejectReprice(id: string): Promise<Deal | undefined> {
  * operator's quote (`RATE_PENDING`). The old rate and amount no longer apply.
  */
 export async function requestNewRate(id: string): Promise<Deal | undefined> {
-  await mockDelay();
+  await mockDelay('write');
   return updateDeal(id, { status: 'RATE_PENDING', to: null, rate: null });
 }
 
@@ -100,7 +100,7 @@ export function expireQuote(id: string): Deal | undefined {
 }
 
 export async function transfer(request: TransferRequest): Promise<void> {
-  await mockDelay();
+  await mockDelay('write');
   moveBetweenAccounts(request.from, request.to, request.ticker, Number(request.amount));
 }
 

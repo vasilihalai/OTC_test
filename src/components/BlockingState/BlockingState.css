@@ -22,6 +22,21 @@
   padding: 0 24px;
 }
 
+/* The shield lands, then the words follow. */
+.blocking-state__content > svg {
+  animation: pop-in 0.4s var(--ease-spring) backwards;
+}
+
+.blocking-state__title,
+.blocking-state__body,
+.blocking-state__action {
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
+}
+
+.blocking-state__title { animation-delay: 80ms; }
+.blocking-state__body { animation-delay: 130ms; }
+.blocking-state__action { animation-delay: 180ms; }
+
 .blocking-state__title {
   font-size: 18px;
   line-height: 24px;

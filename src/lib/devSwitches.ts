@@ -42,3 +42,28 @@ export function isRequisitesErrorScenario(): boolean {
 export function isEmptyDealsScenario(): boolean {
   return readHashParam('scenario') === 'empty_deals';
 }
+
+const LATENCY_KEY = 'xruby-mock-latency';
+
+/**
+ * `?latency=2000` — every mock call takes that many milliseconds, for looking at skeletons and loaders.
+ * Kept for the tab's session, since the parameter leaves the address with the first navigation;
+ * `?latency=0` switches it off.
+ */
+export function mockLatencyOverride(): number | undefined {
+  try {
+    const fromUrl = readHashParam('latency');
+    if (fromUrl !== null) {
+      const ms = Number(fromUrl);
+      if (Number.isFinite(ms) && ms > 0) {
+        sessionStorage.setItem(LATENCY_KEY, String(Math.min(ms, 15_000)));
+      } else {
+        sessionStorage.removeItem(LATENCY_KEY);
+      }
+    }
+    const stored = Number(sessionStorage.getItem(LATENCY_KEY));
+    return stored > 0 ? stored : undefined;
+  } catch {
+    return undefined;
+  }
+}

@@ -3,20 +3,14 @@ import { useEffect, useState } from 'react';
 import { Modal } from '@/components/Modal/Modal.tsx';
 import { CodeInput } from '@/components/CodeInput/CodeInput.tsx';
 import { Button } from '@/components/Button/Button.tsx';
-import { Spinner } from '@/components/Spinner/Spinner.tsx';
+import { CodeStatus } from '@/components/CodeStatus/CodeStatus.tsx';
 import type { AuthOtpSource } from '@/api/index.ts';
+import { formatClock } from '@/lib/countdown.ts';
+import { useResendCountdown } from '@/lib/useResendCountdown.ts';
 import { notifyError, notifySuccess } from '@/telegram/adapter.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './OtpConfirmModal.css';
-
-const RESEND_SECONDS = 59;
-
-function formatCountdown(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (seconds % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
 
 export interface OtpConfirmSubmitParams {
   transactionId: string;
@@ -53,7 +47,8 @@ export function OtpConfirmModal({
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
   const [verifying, setVerifying] = useState(false);
-  const [resendCountdown, setResendCountdown] = useState(RESEND_SECONDS);
+  const [resending, setResending] = useState(false);
+  const { secondsLeft, restart } = useResendCountdown(open && currentSource === 'email');
 
   useEffect(() => {
     if (!open) {
@@ -63,16 +58,8 @@ export function OtpConfirmModal({
     setCurrentSource(source);
     setCode('');
     setError(undefined);
-    setResendCountdown(RESEND_SECONDS);
-  }, [open, transactionId, source]);
-
-  useEffect(() => {
-    if (!open || currentSource !== 'email' || resendCountdown <= 0) {
-      return;
-    }
-    const timer = setInterval(() => setResendCountdown((s) => s - 1), 1000);
-    return () => clearInterval(timer);
-  }, [open, currentSource, resendCountdown > 0]);
+    restart();
+  }, [open, transactionId, source, restart]);
 
   async function attemptConfirm(value: string) {
     setVerifying(true);
@@ -92,15 +79,18 @@ export function OtpConfirmModal({
 
   async function handleResend() {
     setError(undefined);
+    setResending(true);
     try {
       const next = await onResend();
       setTxId(next.transactionId);
       setCurrentSource(next.source);
       setCode('');
-      setResendCountdown(RESEND_SECONDS);
+      restart();
     } catch (err) {
       notifyError();
       setError(err instanceof Error ? err.message : ru.verification.errorCodeInvalid);
+    } finally {
+      setResending(false);
     }
   }
 
@@ -115,11 +105,12 @@ export function OtpConfirmModal({
         <Button
           type="button"
           variant="secondary"
-          disabled={resendCountdown > 0}
+          disabled={secondsLeft > 0}
+          loading={resending}
           onClick={() => void handleResend()}
         >
-          {resendCountdown > 0
-            ? `${ru.verification.resendAction} ${formatCountdown(resendCountdown)}`
+          {secondsLeft > 0
+            ? `${ru.verification.resendAction} ${formatClock(secondsLeft)}`
             : ru.verification.resendAction}
         </Button>
       ) : undefined}
@@ -135,10 +126,7 @@ export function OtpConfirmModal({
 
       <CodeInput value={code} onChange={setCode} onComplete={(value) => void attemptConfirm(value)} error={!!error} disabled={verifying}/>
 
-      {verifying && (
-        <p className="otp-confirm-modal__status"><Spinner size={16}/>{ru.verification.verifyingLabel}</p>
-      )}
-      {error && <p className="otp-confirm-modal__error">{error}</p>}
+      <CodeStatus verifying={verifying} error={error}/>
     </Modal>
   );
 }

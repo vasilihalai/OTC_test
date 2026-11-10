@@ -1,17 +1,19 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { Modal } from '@/components/Modal/Modal.tsx';
 import { Select } from '@/components/Select/Select.tsx';
 import { AmountField } from '@/components/AmountField/AmountField.tsx';
 import { Button } from '@/components/Button/Button.tsx';
 import { CurrencyIcon } from '@/components/CurrencyIcon/CurrencyIcon.tsx';
-import { ApiError, getAccounts, getAssets, mapApiError, transfer } from '@/api/index.ts';
-import type { Accounts, Asset, TransferAccount } from '@/api/index.ts';
+import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
+import { ApiError, mapApiError, transfer } from '@/api/index.ts';
+import type { TransferAccount } from '@/api/index.ts';
 import { useTransferModalStore } from '@/store/transferModal.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { useToastStore } from '@/store/toast.ts';
 import { notifyError, notifySuccess } from '@/telegram/adapter.ts';
 import { formatAmount } from '@/lib/money.ts';
+import { useAccounts, useAssets } from '@/lib/queries.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './TransferModal.css';
@@ -39,9 +41,18 @@ export function TransferModal() {
   const [to, setTo] = useState<TransferAccount>('deposit');
   const [ticker, setTicker] = useState('USDT');
   const [amount, setAmount] = useState('');
-  const [accounts, setAccounts] = useState<Accounts>();
-  const [assets, setAssets] = useState<Asset[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // Read only while the modal is open; what a screen behind it has just loaded is there at once.
+  const accountsQuery = useAccounts(isOpen);
+  const assetsQuery = useAssets(isOpen);
+  // While the modal fades out it is no longer reading: it keeps showing what it had.
+  const last = useRef({ accounts: accountsQuery.data, assets: assetsQuery.data });
+  if (isOpen) {
+    last.current = { accounts: accountsQuery.data, assets: assetsQuery.data };
+  }
+  const { accounts, assets: byGroup } = last.current;
+  const assets = useMemo(() => (byGroup ? [...byGroup.fiat, ...byGroup.crypto] : []), [byGroup]);
+  const loadFailed = accountsQuery.failed || assetsQuery.failed;
 
   const accountsRef = useRef<HTMLDivElement>(null);
   const fromFieldRef = useRef<HTMLDivElement>(null);
@@ -49,19 +60,16 @@ export function TransferModal() {
   const [swapTop, setSwapTop] = useState<number>();
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
+    if (isOpen) {
+      setAmount('');
     }
-    setAmount('');
-    setAccounts(undefined);
-    void Promise.all([getAccounts(), getAssets('fiat'), getAssets('crypto')]).then(([accountsData, fiat, crypto]) => {
-      setAccounts(accountsData);
-      setAssets([...fiat, ...crypto]);
-    }).catch((err: unknown) => {
-      console.error('[TransferModal] balances load failed', err);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && loadFailed) {
       showToast(ru.home.balancesError);
-    });
-  }, [isOpen, showToast]);
+    }
+  }, [isOpen, loadFailed, showToast]);
 
   // Centers the swap ring on the seam between the two *select boxes*
   // themselves, not the midpoint of the whole label+box+label+box stack —
@@ -99,13 +107,11 @@ export function TransferModal() {
     };
   }, [isOpen]);
 
-  if (!isOpen) {
-    return null;
-  }
-
   const available = accounts ? (accounts[from][ticker] ?? '0') : '0';
-  // Not "0" while loading — that reads as an empty account.
-  const availableLabel = accounts ? `${formatAmount(available, ticker)} ${ticker}` : ru.common.loading;
+  // Not "0" while loading — that reads as an empty account. A bar stands in for the figure.
+  const availableLabel = accounts
+    ? `${formatAmount(available, ticker)} ${ticker}`
+    : <Skeleton width={84} height={12} radius={6}/>;
   const amountNum = Number(amount || '0');
   const canConfirm = amountNum > 0 && amountNum <= Number(available);
   const amountError = amount && amountNum > Number(available) ? ru.withdraw.errorInsufficientFunds : undefined;

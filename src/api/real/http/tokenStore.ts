@@ -118,6 +118,15 @@ export async function refreshTokens(): Promise<TokenSet> {
 /** Ensures the access token is valid for at least the next minute, re-authenticating first if not. Returns `null` if there's nothing to refresh with (never authenticated this boot, or re-authentication just failed). */
 export async function ensureFreshAccessToken(): Promise<string | null> {
   if (!current) {
+    // The silent re-entry at boot may still be under way while the first screen is already asking for
+    // its data: the request waits for that token instead of going out without one and being repeated.
+    if (refreshPromise) {
+      try {
+        return (await refreshPromise).accessToken;
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
   if (current.accessToken && current.expiresAt - Date.now() > 60_000) {

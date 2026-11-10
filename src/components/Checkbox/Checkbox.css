@@ -24,11 +24,28 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.16s ease, border-color 0.16s ease, transform var(--dur-fast) var(--ease-out);
+}
+
+.checkbox:active .checkbox__box {
+  transform: scale(0.9);
 }
 
 .checkbox__box--checked {
   background: var(--accent);
   border-color: var(--accent);
+}
+
+/* The tick is one dash as long as its path: shifted off while unchecked, drawn on when checked. */
+.checkbox__tick {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0.1s var(--ease-in);
+}
+
+.checkbox__box--checked .checkbox__tick {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.2s var(--ease-out) 0.06s;
 }
 
 .checkbox__text {

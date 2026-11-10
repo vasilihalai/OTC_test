@@ -1,0 +1,12 @@
+/* The label row and the 44px box of Select / TextField / AmountField. */
+.field-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-skeleton__label {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-muted);
+}

@@ -7,7 +7,7 @@ import './Badge.css';
 const [b] = bem('badge');
 
 export interface BadgeProps {
-  variant?: 'success' | 'neutral' | 'count';
+  variant?: 'success' | 'neutral';
   children: ReactNode;
 }
 

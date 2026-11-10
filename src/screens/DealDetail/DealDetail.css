@@ -7,6 +7,26 @@
   min-height: 100%;
 }
 
+/* The top card and, on the top-up screen, everything that goes with it: the same column as the screen's own. */
+.deal-detail__body,
+.deal-detail__placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* A placeholder card has no status yet, so no tint either. */
+.deal-detail__placeholder-card {
+  background-image: none;
+}
+
+.deal-detail__placeholder-document {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+}
+
 .deal-detail__section-title {
   margin: 0 0 6px;
   font-size: 16px;
@@ -96,9 +116,20 @@
 }
 
 .quote-card__timer {
+  display: inline-block;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
   font-weight: 600;
+}
+
+/* The last half-minute: the figure breathes once a second, in step with its own ticking. */
+.quote-card__timer--urgent {
+  animation: quote-card-urgent 1s ease-in-out infinite;
+}
+
+@keyframes quote-card-urgent {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 .quote-card__rows {

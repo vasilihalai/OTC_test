@@ -1,11 +1,36 @@
+/* A placeholder bar. The highlight is a pseudo-element moved with `transform`, so it runs on the
+   compositor and stays smooth while the main thread is busy loading the very data it stands for. */
 .skeleton {
-  display: inline-block;
-  background: linear-gradient(100deg, var(--bg-surface) 33%, var(--bg-elevated) 50%, var(--bg-surface) 67%);
-  background-size: 300% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--skeleton-base);
+  /* Makes the rounded corners clip the moving highlight in every webview. */
+  transform: translateZ(0);
 }
 
-@keyframes skeleton-shimmer {
-  0% { background-position: 100% 0; }
-  100% { background-position: 0% 0; }
+/* As wide as the app shell and shifted back by the bar's own offset in it (both set by Skeleton.tsx),
+   so all bars show parts of the same beam. Without the measurements it falls back to a sweep of the
+   bar's own width. */
+.skeleton::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--skeleton-x, 0px) * -1);
+  width: var(--skeleton-w, 100%);
+  background: linear-gradient(100deg, transparent 32%, var(--skeleton-shine) 50%, transparent 68%);
+  transform: translateX(-100%);
+  animation: skeleton-sweep 1.7s linear infinite;
+  animation-delay: var(--skeleton-phase, 0s);
+}
+
+/* The beam crosses the screen in the middle half of the cycle and rests outside it for the rest. */
+@keyframes skeleton-sweep {
+  to { transform: translateX(100%); }
+}
+
+.skeleton-group {
+  animation: fade-in 0.2s ease-out backwards;
 }

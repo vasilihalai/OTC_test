@@ -4,22 +4,22 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Select } from '@/components/Select/Select.tsx';
 import { TextField } from '@/components/TextField/TextField.tsx';
 import { Checkbox } from '@/components/Checkbox/Checkbox.tsx';
-import { SummaryCard } from '@/components/SummaryCard/SummaryCard.tsx';
+import { SummaryCard, SummaryCardSkeleton } from '@/components/SummaryCard/SummaryCard.tsx';
 import { Button } from '@/components/Button/Button.tsx';
 import { TwoFactorGate } from '@/components/TwoFactorGate/TwoFactorGate.tsx';
 import {
   ApiError,
   confirmWithdrawOtp,
-  getSavedRequisites,
-  getWithdrawFiatOptions,
   getWithdrawFiatQuote,
   issueWithdrawOtp,
   mapApiError,
 } from '@/api/index.ts';
-import type { FiatWithdrawOptions, RequisitesPayload, SavedRequisite, WithdrawOtpSource, WithdrawQuote } from '@/api/index.ts';
+import type { RequisitesPayload, SavedRequisite, WithdrawOtpSource, WithdrawQuote } from '@/api/index.ts';
+import { FIAT_SUMMARY_LABELS } from '@/screens/WithdrawFiat/WithdrawFiatSkeleton.tsx';
 import { useRequireSession } from '@/store/session.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { formatAmount } from '@/lib/money.ts';
+import { useSavedRequisites, useWithdrawFiatOptions } from '@/lib/queries.ts';
 import { RateLimitedError } from '@/lib/rateLimitedError.ts';
 import { notifyError } from '@/telegram/adapter.ts';
 import { showWithdrawalAccepted } from '@/lib/withdrawalToast.ts';
@@ -36,6 +36,8 @@ export interface WithdrawFiatRouteState {
 
 const NEW_OPTION = '__new__';
 
+const NO_SAVED: SavedRequisite[] = [];
+
 export function WithdrawRequisites() {
   const session = useRequireSession();
   const navigate = useNavigate();
@@ -43,7 +45,11 @@ export function WithdrawRequisites() {
   const routeState = location.state as WithdrawFiatRouteState | null;
   const bumpBalancesVersion = useUiStore((s) => s.bumpBalancesVersion);
 
-  const [saved, setSaved] = useState<SavedRequisite[]>([]);
+  // Saved requisites are a convenience; without them the form is still fully usable. The methods are
+  // the very ones the previous screen has just shown, so they are in memory already.
+  const saved = useSavedRequisites().data ?? NO_SAVED;
+  const methods = useWithdrawFiatOptions(routeState?.ticker ?? '');
+  const options = methods.data;
   const [choice, setChoice] = useState<string>(NEW_OPTION);
   const [account, setAccount] = useState('');
   const [bic, setBic] = useState('');
@@ -52,7 +58,6 @@ export function WithdrawRequisites() {
   const [inn, setInn] = useState('');
   const [corrAccount, setCorrAccount] = useState('');
   const [saveForLater, setSaveForLater] = useState(false);
-  const [options, setOptions] = useState<FiatWithdrawOptions>();
   const [accountError, setAccountError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const withdrawalId = useRef<string>();
@@ -66,22 +71,6 @@ export function WithdrawRequisites() {
       navigate('/withdraw/fiat', { replace: true });
     }
   }, [routeState, navigate]);
-
-  useEffect(() => {
-    // Saved requisites are a convenience; without them the form is still fully usable.
-    void getSavedRequisites().then(setSaved).catch((err: unknown) => {
-      console.error('[WithdrawRequisites] saved requisites load failed', err);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (routeState) {
-      // Same cached directory the previous screen just loaded successfully.
-      void getWithdrawFiatOptions(routeState.ticker).then(setOptions).catch((err: unknown) => {
-        console.error('[WithdrawRequisites] withdraw options load failed', err);
-      });
-    }
-  }, [routeState]);
 
   // The requisites field set is decided by the withdrawal method chosen on
   // the previous screen — it's not a separate choice made here.
@@ -249,6 +238,7 @@ export function WithdrawRequisites() {
         <Checkbox checked={saveForLater} onChange={setSaveForLater} label={ru.withdraw.saveRequisiteLabel}/>
       )}
 
+      {methods.loading && <SummaryCardSkeleton labels={FIAT_SUMMARY_LABELS} totalLabel={ru.withdraw.totalDebitLabel}/>}
       {method && (
         <SummaryCard
           rows={[

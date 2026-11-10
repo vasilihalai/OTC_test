@@ -26,3 +26,8 @@
   font-weight: 500;
   color: var(--text-body);
 }
+
+/* A flex box, so the bar's margins stay inside the value's line instead of collapsing out of it. */
+.stat-card__value--loading {
+  display: flex;
+}

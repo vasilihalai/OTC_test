@@ -1,0 +1,47 @@
+/* Keep in step with `.boot-splash` in index.html: the splash turns into this without a visible seam. */
+.brand-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  min-height: 55vh;
+  padding: 48px 16px;
+  animation: fade-in 0.25s ease-out backwards;
+}
+
+.brand-loader__mark {
+  border-radius: 9px;
+  animation: brand-loader-breathe 1.8s ease-in-out infinite;
+}
+
+.brand-loader__bar {
+  position: relative;
+  width: 96px;
+  height: 3px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateZ(0);
+}
+
+.brand-loader__bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: var(--brand-mark);
+  transform: translateX(-100%);
+  animation: brand-loader-run 1.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
+@keyframes brand-loader-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.72; transform: scale(0.94); }
+}
+
+@keyframes brand-loader-run {
+  0% { transform: translateX(-100%) scaleX(0.4); }
+  50% { transform: translateX(0) scaleX(0.7); }
+  100% { transform: translateX(100%) scaleX(0.4); }
+}

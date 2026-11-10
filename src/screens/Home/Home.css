@@ -18,9 +18,19 @@
   gap: 8px;
 }
 
-.home__hero .badge {
+.home__hero .badge,
+.home__chip-skeleton {
   align-self: flex-start;
   margin-top: -12px;
+}
+
+.home__hero .badge {
+  animation: fade-in 0.24s var(--ease-out) backwards;
+}
+
+/* The numbers taking their placeholders' place. */
+.home__stats .stat-card__value {
+  animation: fade-in 0.24s var(--ease-out) backwards;
 }
 
 .home__hero-title {
@@ -80,13 +90,6 @@
   text-align: center;
   padding: 12px 16px;
   margin: 0;
-}
-
-.home__deals-skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 0 16px;
 }
 
 .home__hidden-caption {

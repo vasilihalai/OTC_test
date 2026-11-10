@@ -1,6 +1,3 @@
-// Include Telegram UI styles first to allow our code override the package CSS.
-import '@telegram-apps/telegram-ui/dist/styles.css';
-
 import ReactDOM from 'react-dom/client';
 import { StrictMode } from 'react';
 import { retrieveLaunchParams } from '@tma.js/sdk-react';
@@ -9,7 +6,7 @@ import { Root } from '@/components/Root.tsx';
 import { EnvUnsupported } from '@/components/EnvUnsupported.tsx';
 import { init } from '@/init.ts';
 import { ensureTelegramEnvironment } from '@/telegram/environment.ts';
-import { USE_REAL_API, exchangeSocialCode, getUser } from '@/api/index.ts';
+import { USE_REAL_API, exchangeSocialCode } from '@/api/index.ts';
 import { authenticateMiniApp } from '@/api/real/miniAppAuth.ts';
 import { getFreshInitData } from '@/telegram/initData.ts';
 import {
@@ -19,6 +16,7 @@ import {
   setReauthenticator,
 } from '@/api/real/http/tokenStore.ts';
 import { useSessionStore } from '@/store/session.ts';
+import { fetchUser, prefetchHome } from '@/lib/queries.ts';
 import type { ClientType } from '@/api/types.ts';
 
 import './index.css';
@@ -51,6 +49,66 @@ async function tryCompleteSocialSignIn(): Promise<void> {
   }
 }
 
+/**
+ * Telegram-binding boot flow (backend-confirmed, superseding the old x-telegram-init-data one-shot
+ * header entirely — see `real/miniAppAuth.ts`'s own comment for the full contract). Every cold boot in
+ * real mode tries a *silent* re-entry before ever showing the login screen: if this Telegram identity
+ * is already bound to a platform account, the backend hands back a session with no
+ * login/password/2FA involved. `SignIn.tsx` only ever renders because this came back empty-handed —
+ * either genuinely unbound, or (since any non-2xx here is read the same way, see
+ * `authenticateMiniApp`'s own comment) a transient failure; either way the standard email+password
+ * flow is always there as the fallback.
+ *
+ * Started before the SDK is set up, so the two run side by side. The returned promise says when the
+ * app may be put on screen:
+ *  - a client who was signed in last time (the session is remembered) is not kept waiting at all — the
+ *    app opens on its screens' skeletons, and their requests wait for the token (`tokenStore`);
+ *  - anyone else waits until it is known whether there is a session, so the login form never flashes
+ *    before Home.
+ * As soon as there is a token, Home's data is requested, without waiting for the screen to exist.
+ */
+function startSilentReentry(): Promise<void> {
+  // Wired once, here — `tokenStore` itself stays free of any Telegram/mini-app-specific import, see
+  // its own comment. This same callback is what a lapsed access token re-runs mid-session too, not
+  // just at boot: this client's access token has no refresh_token at all, so "refreshing" it is
+  // always another `authenticateMiniApp` call.
+  setReauthenticator(async () => {
+    const initData = getFreshInitData();
+    if (!initData) {
+      throw new Error('No Telegram initData available');
+    }
+    return authenticateMiniApp(initData);
+  });
+
+  const returning = useSessionStore.getState().session;
+  // Restores an access token that survived a same-tab reload, if any — skips the network round trip
+  // when it's still there.
+  hydrateTokensFromStorage();
+  // No binding yet (or a transient failure) leaves no token: Entry (App.tsx) then has no session to
+  // route to /home with, so the login screen renders normally.
+  const token = getAccessToken() ? Promise.resolve() : refreshTokens().then(() => undefined, () => undefined);
+
+  const signedIn = token.then(async () => {
+    if (!getAccessToken()) {
+      return;
+    }
+    prefetchHome(returning?.clientType);
+    try {
+      // Real getUser reads the account type from the token's `accountType` claim.
+      const profile = await fetchUser(returning?.clientType ?? 'FL');
+      const current = useSessionStore.getState().session;
+      if (current?.email !== profile.email || current.clientType !== profile.clientType) {
+        useSessionStore.getState().setSession({ email: profile.email, clientType: profile.clientType });
+      }
+    } catch {
+      // Got a token but the profile fetch failed — leave the session as it was rather than show a
+      // half-populated app; the next real API call still has a valid token to work with.
+    }
+  });
+
+  return returning ? Promise.resolve() : signedIn;
+}
+
 // No top-level await: some Telegram clients' embedded webview engines (notably
 // older Telegram Desktop builds) fail to parse a module using it at all, which
 // silently renders a blank screen instead of the app.
@@ -65,6 +123,9 @@ void (async () => {
     const debug = (launchParams.tgWebAppStartParam || '').includes('debug')
       || import.meta.env.DEV;
 
+    // The network part of the boot goes out now and runs while the SDK is being set up below.
+    const reentry = USE_REAL_API ? startSilentReentry() : undefined;
+
     // Configure all application dependencies.
     await init({
       debug,
@@ -72,56 +133,8 @@ void (async () => {
       mockForMacOS: platform === 'macos',
     });
 
-    // Telegram-binding boot flow (backend-confirmed, superseding the old
-    // x-telegram-init-data one-shot header entirely — see
-    // `real/miniAppAuth.ts`'s own comment for the full contract). Every
-    // cold boot in real mode tries a *silent* re-entry before ever showing
-    // the login screen: if this Telegram identity is already bound to a
-    // platform account, the backend hands back a session with no
-    // login/password/2FA involved. `SignIn.tsx` only ever renders because
-    // this came back empty-handed — either genuinely unbound, or (since any
-    // non-2xx here is read the same way, see `authenticateMiniApp`'s own
-    // comment) a transient failure; either way the standard email+password
-    // flow is always there as the fallback.
-    if (USE_REAL_API) {
-      // Wired once, here — `tokenStore` itself stays free of any
-      // Telegram/mini-app-specific import, see its own comment. This same
-      // callback is what a lapsed access token re-runs mid-session too, not
-      // just at boot: this client's access token has no refresh_token at
-      // all, so "refreshing" it is always another `authenticateMiniApp` call.
-      setReauthenticator(async () => {
-        const initData = getFreshInitData();
-        if (!initData) {
-          throw new Error('No Telegram initData available');
-        }
-        return authenticateMiniApp(initData);
-      });
-
-      // Restores an access token that survived a same-tab reload, if any —
-      // skips the network round trip below when it's still valid.
-      hydrateTokensFromStorage();
-      if (!getAccessToken()) {
-        try {
-          await refreshTokens(); // unconditionally invokes the reauthenticator above
-        } catch {
-          // No binding yet (or a transient failure) — fall through with no
-          // token; Entry (App.tsx) has no session to route to /home with,
-          // so the login screen renders normally.
-        }
-      }
-
-      if (getAccessToken()) {
-        try {
-          // Real getUser reads the account type from the token's `accountType` claim.
-          const profile = await getUser('FL');
-          useSessionStore.getState().setSession({ email: profile.email, clientType: profile.clientType });
-        } catch {
-          // Got a token but the profile fetch failed — leave session unset
-          // rather than show a half-populated app; the next real API call
-          // still has a valid token to work with via `ensureFreshAccessToken`.
-        }
-      }
-
+    if (reentry) {
+      await reentry;
       // Best-effort completion of Google/Apple sign-in (§2.2, question B3) —
       // only relevant if this relaunch happens to carry the OAuth
       // provider's redirect params; on every other boot this is a no-op

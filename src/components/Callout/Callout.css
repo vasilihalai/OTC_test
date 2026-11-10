@@ -1,6 +1,7 @@
 .callout {
   border-radius: 12px;
   padding: 12px;
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
   font-size: 14px;
   line-height: 20px;
   color: var(--text-muted);

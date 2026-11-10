@@ -68,3 +68,25 @@
 .withdraw-crypto__section-title:first-child {
   margin-top: 0;
 }
+
+/* The scanner's black screen while its code arrives — the same screen it opens on, so nothing flashes. */
+.withdraw-crypto__scanner-wait {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #fff;
+  animation: fade-in 0.2s ease-out;
+}
+
+.withdraw-crypto__qr-button {
+  transition: transform var(--dur-fast) var(--ease-out), color var(--dur) ease;
+}
+
+.withdraw-crypto__qr-button:active {
+  transform: scale(0.88);
+  color: var(--text-body);
+}

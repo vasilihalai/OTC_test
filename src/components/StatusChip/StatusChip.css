@@ -19,6 +19,8 @@
   border-radius: 12px;
   font-size: 12px;
   line-height: 16px;
+  /* The deal's header chip: a new status doesn't just swap its text, it arrives (DealDetail re-keys it). */
+  animation: pop-in 0.28s var(--ease-spring) backwards;
 }
 
 .status-chip--DONE {

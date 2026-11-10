@@ -24,6 +24,15 @@ import type { Session } from '@/api/types.ts';
 
 export const USE_REAL_API = import.meta.env.VITE_USE_REAL_API === 'true';
 
+/**
+ * Stands in, in a real-mode build, for the few calls that exist only for the mock (its callers are all
+ * behind `!USE_REAL_API`). With nothing left pointing at the mock's data and store, the bundler leaves
+ * them out of the production bundle (see `treeshake` in vite.config.ts).
+ */
+function mockOnly(): never {
+  throw new Error('This call exists only in mock mode');
+}
+
 // Generic OTP verification — withdrawal-confirmation 2FA only now (see
 // real/auth.ts's own comment). Sign-in and password recovery each have
 // their own dedicated pair below, matching api-integration.md §2's three
@@ -83,7 +92,7 @@ export async function signInConfirmOtp(params: { transactionId: string; otp: str
 // Google / Apple — §2.2. Mock stays an instant fake session; real opens an
 // external browser and completes (if at all) on relaunch — genuinely
 // different flows, so SignIn.tsx still branches on USE_REAL_API here only.
-export const signInSocial = mockAuth.signInSocial;
+export const signInSocial = USE_REAL_API ? mockOnly : mockAuth.signInSocial;
 export const startSocialSignIn = realAuth.startSocialSignIn;
 export const exchangeSocialCode = realAuth.exchangeSocialCode;
 
@@ -224,8 +233,8 @@ export { DocumentUnavailableError } from '@/api/real/otc.ts';
 // Client-driven only (the quote card's own countdown hitting zero) — real
 // mode has no command for this, the server reflects EXPIRED (a quote) or
 // TOPUP (expired new terms) on its own.
-export const expireQuote = mockActions.expireQuote;
-export const setDepositBalanceForTesting = mockActions.setDepositBalanceForTesting;
+export const expireQuote = USE_REAL_API ? mockOnly : mockActions.expireQuote;
+export const setDepositBalanceForTesting = USE_REAL_API ? mockOnly : mockActions.setDepositBalanceForTesting;
 
 export { ApiError } from '@/api/http.ts';
 export { mapApiError } from '@/api/real/errorMap.ts';

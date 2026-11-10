@@ -6,6 +6,8 @@ export type ToastTone = 'plain' | 'notice';
 interface ToastStore {
   message: string | null;
   tone: ToastTone;
+  /** Counts every `show`, so the same text shown twice is still a new toast with its own time on screen. */
+  shown: number;
   show: (message: string, tone?: ToastTone) => void;
   hide: () => void;
 }
@@ -13,6 +15,7 @@ interface ToastStore {
 export const useToastStore = create<ToastStore>((set) => ({
   message: null,
   tone: 'plain',
-  show: (message, tone = 'plain') => set({ message, tone }),
+  shown: 0,
+  show: (message, tone = 'plain') => set((state) => ({ message, tone, shown: state.shown + 1 })),
   hide: () => set({ message: null }),
 }));

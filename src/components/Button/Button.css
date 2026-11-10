@@ -1,4 +1,5 @@
 .button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6,12 +7,40 @@
   border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: transform 0.1s ease, opacity 0.15s ease, background-color 0.1s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    opacity 0.15s ease,
+    background-color var(--dur) ease,
+    color var(--dur) ease;
 }
 
 .button:active:not(:disabled) {
   transform: scale(0.97);
   opacity: 0.9;
+}
+
+/* Working: the label and icons fade out where they stand and the spinner fades in over them. */
+.button__icon,
+.button__label,
+.button__chevron {
+  transition: opacity var(--dur-fast) ease;
+}
+
+.button--loading .button__icon,
+.button--loading .button__label,
+.button--loading .button__chevron {
+  opacity: 0;
+}
+
+.button__spinner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pop-in var(--dur) var(--ease-out) backwards;
 }
 
 .button--link:active:not(:disabled),
@@ -82,6 +111,26 @@
   color: var(--text-quiet);
 }
 
+/* Working is not the same as unavailable: the button keeps its own fill under the spinner, where
+   the disabled look would read as "you can't press this". */
+.button--loading:disabled {
+  cursor: progress;
+}
+
+.button--loading.button--primary:disabled {
+  background: #FFFFFF;
+}
+
+.button--loading.button--accent:disabled {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.button--loading.button--secondary:disabled {
+  background: var(--bg-raised);
+  color: var(--text-on-accent);
+}
+
 /* Compact size — §3: 36 high, radius 18, `button-sm` label. */
 .button--compact.button--primary,
 .button--compact.button--accent,
@@ -97,7 +146,8 @@
    ever used for the profile certificate button, sitting directly on the
    --bg-page details card below it, where the regular secondary fill read as
    too close to the background per a Figma annotation. */
-.button--compact.button--secondary {
+.button--compact.button--secondary,
+.button--compact.button--secondary.button--loading:disabled {
   background: var(--bg-elevated);
 }
 

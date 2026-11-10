@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { BlockingState } from '@/components/BlockingState/BlockingState.tsx';
+import { BrandLoader } from '@/components/BrandLoader/BrandLoader.tsx';
 import { Button } from '@/components/Button/Button.tsx';
-import { Spinner } from '@/components/Spinner/Spinner.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
-import { getUser } from '@/api/index.ts';
-import type { OtcAccessReason, User } from '@/api/index.ts';
+import type { OtcAccessReason } from '@/api/index.ts';
 import { useSessionStore } from '@/store/session.ts';
+import { useUser } from '@/lib/queries.ts';
 import { ru } from '@/i18n/ru.ts';
 
 export function OtcUnavailable() {
@@ -17,24 +16,13 @@ export function OtcUnavailable() {
   // location.state avoids losing a `?otc=` dev override once the URL has
   // changed to this screen. The user's own reason is the fallback.
   const locationReason = (useLocation().state as { otcAccess?: OtcAccessReason } | null)?.otcAccess;
-  const [user, setUser] = useState<User>();
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    if (session) {
-      setFailed(false);
-      void getUser(session.clientType).then(setUser).catch((err: unknown) => {
-        console.error('[OtcUnavailable] user load failed', err);
-        setFailed(true);
-      });
-    }
-  }, [session, attempt]);
+  // The gate that sent the client here has just read this very user, so it is normally there at once.
+  const { data: user, failed, refetch } = useUser(session?.clientType);
 
   if (!user) {
     return failed
-      ? <div className="page-error"><LoadError message={ru.common.errorGeneric} onRetry={() => setAttempt((n) => n + 1)}/></div>
-      : <div className="page-loader"><Spinner size={28}/></div>;
+      ? <div className="page-error"><LoadError message={ru.common.errorGeneric} onRetry={() => void refetch()}/></div>
+      : <BrandLoader/>;
   }
 
   const reason = locationReason ?? user.otcAccess;

@@ -6,26 +6,3 @@
   line-height: 24px;
   color: var(--text-muted);
 }
-
-.authenticator-modal__error {
-  margin: -8px 0 0;
-  text-align: center;
-  font-size: 14px;
-  color: var(--accent);
-}
-
-.authenticator-modal__status {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: -8px 0 0;
-  font-size: 14px;
-  color: var(--text-muted);
-  animation: authenticator-status-in 0.15s ease-out;
-}
-
-@keyframes authenticator-status-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}

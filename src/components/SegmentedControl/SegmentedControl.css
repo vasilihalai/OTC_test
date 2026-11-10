@@ -1,8 +1,22 @@
 .segmented-control {
+  position: relative;
   display: inline-flex;
 }
 
+/* The chosen item's fill: one pill that slides between the items. */
+.segmented-control__thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 36px;
+  border-radius: 30px;
+  background: var(--bg-raised);
+  pointer-events: none;
+  transition: transform 0.28s var(--ease-in-out), width 0.28s var(--ease-in-out);
+}
+
 .segmented-control__item {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -15,7 +29,7 @@
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.18s ease, background-color 0.18s ease, transform 0.1s ease;
+  transition: color 0.18s ease, transform 0.1s ease;
 }
 
 .segmented-control__item:active {
@@ -23,7 +37,6 @@
 }
 
 .segmented-control__item--active {
-  background: var(--bg-raised);
   color: var(--text-strong);
   font-weight: 600;
 }

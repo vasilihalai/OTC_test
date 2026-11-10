@@ -41,33 +41,9 @@
   overflow-wrap: anywhere;
 }
 
-.requisites-panel__copy {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
+/* The glyph and its feedback are CopyButton's own; this only places the "copy all" link. */
 .requisites-panel__copy-all {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin-top: 8px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .requisites-panel__qr-caption {
@@ -104,6 +80,12 @@
   padding: 8px;
   background: #FFFFFF;
   border-radius: 12px;
+  animation: fade-in 0.24s var(--ease-out) backwards;
+}
+
+/* The code's place while it is being drawn. */
+.requisites-panel__qr-wait {
+  margin: 0 auto;
 }
 
 /* The brand mark knocked out at the QR's centre — the code is generated at
@@ -145,6 +127,8 @@
   color: var(--text-primary);
   word-break: break-all;
   text-wrap: balance;
+  /* Re-keyed by the address: another network's address fades in. */
+  animation: fade-in 0.24s var(--ease-out) backwards;
 }
 
 /* A single asset: filled, not a field to change. */

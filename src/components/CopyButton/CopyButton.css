@@ -1,0 +1,72 @@
+.copy-button {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+/* The glyph is 16px as drawn in the frames; the finger gets 40. */
+.copy-button::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+
+.copy-button__glyph {
+  display: flex;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.copy-button:active .copy-button__glyph {
+  transform: scale(0.85);
+}
+
+.copy-button--copied {
+  color: var(--verified);
+}
+
+.copy-button--copied .copy-button__glyph {
+  animation: pop-in 0.22s var(--ease-spring);
+}
+
+.copy-button__tick {
+  stroke-dasharray: 1;
+  animation: copy-button-tick 0.22s var(--ease-out) 0.04s backwards;
+}
+
+@keyframes copy-button-tick {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* "Скопировать все реквизиты": the glyph with its caption, as a text link. */
+.copy-button--labelled {
+  width: auto;
+  height: auto;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.copy-button--labelled::before {
+  inset: -8px -4px;
+}
+
+.copy-button--labelled.copy-button--copied {
+  color: var(--text-primary);
+}
+
+.copy-button--labelled.copy-button--copied .copy-button__glyph {
+  color: var(--verified);
+}

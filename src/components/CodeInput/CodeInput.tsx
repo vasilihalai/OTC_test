@@ -71,7 +71,7 @@ export function CodeInput({ value, onChange, onComplete, error, disabled }: Code
         <input
           key={index}
           ref={(el) => { refs.current[index] = el; }}
-          className={e('cell')}
+          className={e('cell', { filled: !!digit })}
           inputMode="numeric"
           maxLength={1}
           placeholder="_"

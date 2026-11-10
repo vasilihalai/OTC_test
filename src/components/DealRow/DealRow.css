@@ -4,7 +4,16 @@
   box-sizing: border-box;
   padding: 15px 16px;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color var(--dur-fast) ease;
+}
+
+.deal-row:active {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.deal-row--skeleton {
+  cursor: default;
+  pointer-events: none;
 }
 
 .deal-row__top {

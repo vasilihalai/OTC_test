@@ -54,13 +54,13 @@ export async function getWithdrawCryptoQuote(params: {
 }
 
 export async function issueWithdrawOtp(_transactionId: string, clientType: ClientType): Promise<WithdrawOtpIssueResult> {
-  await mockDelay();
+  await mockDelay('write');
   return { twoFA: true, source: MOCK_USERS[clientType].authenticatorEnabled ? 'authenticator' : 'email' };
 }
 
 /** Any 6 digits succeed except '000000'; 3 consecutive failures rate-limit — same rule `verifyCode` has always used. */
 export async function confirmWithdrawOtp(transactionId: string, otp: string): Promise<WithdrawalResult> {
-  await mockDelay();
+  await mockDelay('write');
   if (otp === '000000') {
     failedOtpAttempts += 1;
     if (failedOtpAttempts >= 3) {

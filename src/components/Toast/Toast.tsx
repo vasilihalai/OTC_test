@@ -1,11 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useToastStore } from '@/store/toast.ts';
+import { useDelayedUnmount } from '@/lib/useDelayedUnmount.ts';
 
 import './Toast.css';
 
 const AUTO_HIDE_MS = 2000;
 const NOTICE_AUTO_HIDE_MS = 4000;
+/** Keep in sync with `toast-out` in Toast.css. */
+const EXIT_MS = 180;
 
 function NoticeIcon() {
   return (
@@ -23,7 +26,14 @@ function NoticeIcon() {
 export function Toast() {
   const message = useToastStore((s) => s.message);
   const tone = useToastStore((s) => s.tone);
+  const shown = useToastStore((s) => s.shown);
   const hide = useToastStore((s) => s.hide);
+  const rendered = useDelayedUnmount(!!message, EXIT_MS);
+  // What to keep drawing while the toast leaves: by then the store has already dropped the text.
+  const last = useRef({ message, tone });
+  if (message) {
+    last.current = { message, tone };
+  }
 
   useEffect(() => {
     if (!message) {
@@ -31,16 +41,17 @@ export function Toast() {
     }
     const timer = setTimeout(hide, tone === 'notice' ? NOTICE_AUTO_HIDE_MS : AUTO_HIDE_MS);
     return () => clearTimeout(timer);
-  }, [message, tone, hide]);
+  }, [message, tone, shown, hide]);
 
-  if (!message) {
+  if (!rendered) {
     return null;
   }
 
   return (
-    <div className="toast" role="status">
-      {tone === 'notice' && <NoticeIcon/>}
-      {message}
+    // Keyed by the show count: a toast that replaces another one arrives anew instead of swapping text.
+    <div key={shown} className={message ? 'toast' : 'toast toast--leaving'} role="status" onClick={hide}>
+      {last.current.tone === 'notice' && <NoticeIcon/>}
+      {last.current.message}
     </div>
   );
 }

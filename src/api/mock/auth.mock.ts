@@ -26,7 +26,7 @@ let failedAttempts = 0;
  * drop-in swap with no screen changes.
  */
 export async function sendVerificationCode(email: string, _password?: string): Promise<void> {
-  await mockDelay();
+  await mockDelay('write');
   if (!isValidEmail(email)) {
     throw new MockSignInError('EMAIL_INVALID');
   }
@@ -35,7 +35,7 @@ export async function sendVerificationCode(email: string, _password?: string): P
 
 /** Any 6 digits succeed except '000000'; 3 consecutive failures rate-limit. */
 export async function verifyCode(code: string): Promise<void> {
-  await mockDelay();
+  await mockDelay('write');
 
   if (failedAttempts >= MAX_CONSECUTIVE_CODE_ATTEMPTS) {
     throw new MockVerifyCodeError('RATE_LIMIT');
@@ -53,7 +53,7 @@ export async function verifyCode(code: string): Promise<void> {
 }
 
 export async function signInSocial(_provider: SocialProvider, clientType: ClientType): Promise<Session> {
-  await mockDelay();
+  await mockDelay('write');
   return { email: MOCK_USERS[clientType].email, clientType };
 }
 
@@ -73,7 +73,7 @@ function otpSourceFor(clientType: ClientType): AuthOtpSource {
 }
 
 export async function signInRequestOtp(email: string, password: string, clientType: ClientType): Promise<{ transactionId: string; source: AuthOtpSource }> {
-  await mockDelay();
+  await mockDelay('write');
   if (!isValidEmail(email) || !password.trim()) {
     throw new MockSignInError('EMAIL_INVALID');
   }
@@ -89,7 +89,7 @@ export interface SignInConfirmParams {
 }
 
 export async function signInConfirmOtp(params: SignInConfirmParams): Promise<Session> {
-  await mockDelay();
+  await mockDelay('write');
   if (signInFailedAttempts >= MAX_CONSECUTIVE_CODE_ATTEMPTS) {
     throw new MockVerifyCodeError('RATE_LIMIT');
   }
@@ -106,7 +106,7 @@ export async function signInConfirmOtp(params: SignInConfirmParams): Promise<Ses
 // ---------------------------------------------------------------------------
 
 export async function recoveryRequestOtp(email: string, clientType: ClientType): Promise<{ transactionId: string; source: AuthOtpSource }> {
-  await mockDelay();
+  await mockDelay('write');
   if (!isValidEmail(email)) {
     throw new MockSignInError('EMAIL_INVALID');
   }
@@ -114,7 +114,7 @@ export async function recoveryRequestOtp(email: string, clientType: ClientType):
 }
 
 export async function recoveryConfirmOtp(_transactionId: string, otp: string): Promise<{ transactionId: string }> {
-  await mockDelay();
+  await mockDelay('write');
   if (otp === '000000') {
     throw new MockVerifyCodeError('CODE_INVALID');
   }
@@ -122,5 +122,5 @@ export async function recoveryConfirmOtp(_transactionId: string, otp: string): P
 }
 
 export async function recoveryComplete(_transactionId: string, _password: string): Promise<void> {
-  await mockDelay();
+  await mockDelay('write');
 }

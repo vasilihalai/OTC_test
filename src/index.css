@@ -4,9 +4,12 @@
 @import '@fontsource/inter/700.css';
 @import './theme/tokens.css';
 @import './theme/type.css';
+@import './theme/motion.css';
 
 * {
   box-sizing: border-box;
+  /* The grey flash mobile webviews draw over anything tapped; every control here has its own pressed state. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* `overscroll-behavior: none` (not `position: fixed`) is what stops the
@@ -43,6 +46,11 @@ button, input, select {
   font-family: inherit;
 }
 
+/* No 300 ms wait for a possible double-tap zoom: the page can't zoom anyway. */
+button, a, [role='button'], label {
+  touch-action: manipulation;
+}
+
 /* `height` (not `min-height`) plus the column flex is what lets
    `.app-content` below resolve to "exactly the space left after the
    header," which individual screens rely on to pin footer content without
@@ -55,6 +63,8 @@ button, input, select {
   flex-direction: column;
   position: relative;
   transform: translateZ(0);
+  /* The boot splash hands over to the app without a hard cut. */
+  animation: fade-in 0.28s ease-out;
 }
 
 /* Caps the app at a mobile-like width and centers it — but only in a
@@ -81,6 +91,8 @@ body:not(.in-telegram) .app-shell {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  /* A page sliding in sideways must not make the screen scroll sideways. */
+  overflow-x: hidden;
   padding-top: var(--header-clearance, 92px);
   overscroll-behavior: contain;
 }
@@ -117,15 +129,18 @@ body.in-telegram.is-fullscreen .app-content {
      the true bottom leaves the last content behind the tab bar instead of
      above it. */
   flex-shrink: 0;
-  animation: page-in 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
+  animation: page-in 0.26s var(--ease-out);
 }
 
-.page-loader {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 240px;
-  color: var(--text-muted);
+/* The direction says where the screen came from: deeper screens arrive from the right, going back
+   brings the previous one from the left, and tabs (or a replaced screen) just settle in place. No
+   fill mode on purpose — a transform kept on the page would trap the modals rendered inside it. */
+.app-content__page--forward {
+  animation-name: page-in-forward;
+}
+
+.app-content__page--back {
+  animation-name: page-in-back;
 }
 
 .page-error {
@@ -137,11 +152,30 @@ body.in-telegram.is-fullscreen .app-content {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes page-in-forward {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes page-in-back {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* A loader that stands still reads as a hang: spinners keep turning, slowly. */
+  .spinner,
+  .brand-loader__bar::after,
+  .status-hero__spin {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
   }
 }

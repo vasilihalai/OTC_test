@@ -102,7 +102,13 @@ interface RawDealListItem {
   status: OtcRealStatus;
 }
 
-/** The list has no `previousRate`/`proposedRate`, so QUOTED reads as a quote and REPRICE as the operator's turn. */
+/** The statuses one list item can't tell apart: a quote from new terms, the operator's turn from a new rate. */
+const AMBIGUOUS_IN_LIST = new Set<OtcRealStatus>(['QUOTED', 'REPRICE']);
+
+/**
+ * The list has no `previousRate`/`proposedRate`, so QUOTED reads as a quote and REPRICE as the operator's
+ * turn. Such an item is marked `statusPending`: the exact status is on the deal's card.
+ */
 function mapListItem(raw: RawDealListItem): Deal {
   createdAtById.set(raw.operationId, raw.createdAt);
   const status = mapOtcStatus(raw.status);
@@ -110,6 +116,7 @@ function mapListItem(raw: RawDealListItem): Deal {
     id: raw.operationId,
     requestNumber: raw.requestNumber,
     status,
+    statusPending: AMBIGUOUS_IN_LIST.has(raw.status) || undefined,
     date: formatDealDate(raw.createdAt),
     direction: directionOf(raw.direction),
     from: amountLabel(raw.amountFrom, raw.assetFrom) ?? '',
@@ -127,37 +134,17 @@ export interface OtcListFilters {
   direction?: RawDirection[];
 }
 
-/** The statuses one list item can't tell apart: a quote from new terms, the operator's turn from a new rate. */
-const AMBIGUOUS_IN_LIST = new Set<OtcRealStatus>(['QUOTED', 'REPRICE']);
-const MAX_REFINED = 6;
-
 /**
- * `POST /v1/otc/deals`. `filters.statuses` omitted (not an empty array) means "Все". A deal waiting for
- * the client's answer must say so in the list, and the list item lacks the fields that show it, so the
- * few deals in `QUOTED`/`REPRICE` get their status from the card. A card that fails to load leaves the
- * list's own reading.
+ * `POST /v1/otc/deals`. `filters.statuses` omitted (not an empty array) means "Все". The answer is
+ * returned as it comes: the few `QUOTED`/`REPRICE` items are marked `statusPending` and take their exact
+ * status from their cards afterwards (`lib/queries.ts`), so the list doesn't wait for those reads.
  */
 export async function getDeals(filters: OtcListFilters = {}, size = 20): Promise<Deal[]> {
   const res = await apiFetch<{ result: { operations: RawDealListItem[] } }>('/v1/otc/deals', {
     method: 'POST',
     body: JSON.stringify({ filters, pagination: { page: 0, size } }),
   }, false, 'financial');
-  const deals = res.result.operations.map(mapListItem);
-  const ambiguous = res.result.operations
-    .map((raw, index) => ({ raw, index }))
-    .filter(({ raw }) => AMBIGUOUS_IN_LIST.has(raw.status))
-    .slice(0, MAX_REFINED);
-  await Promise.all(ambiguous.map(async ({ raw, index }) => {
-    try {
-      const card = await getDealById(raw.operationId);
-      if (card) {
-        deals[index] = { ...deals[index], status: card.status };
-      }
-    } catch (err) {
-      console.warn('[otc] could not refine the list status of', raw.requestNumber, err);
-    }
-  }));
-  return deals;
+  return res.result.operations.map(mapListItem);
 }
 
 interface RawDocument {
@@ -447,17 +434,21 @@ async function postRepriceDecision(operationId: string, command: OtcCommand): Pr
   }
 }
 
-const SETTLE_CHECKS = 5;
+/** Pauses between the re-reads after a command: quick at first, so a fast server isn't waited on for a full second. */
+const SETTLE_PAUSES_MS = [300, 500, 800, 1200, 2000];
 
 /**
  * Most commands are asynchronous: the answer carries the status at intake and the result lands a
- * moment later (BRCE-4023 §2). The card is re-read a few times, a second apart, until the screen
- * changes; the screen's own polling picks up anything slower.
+ * moment later (BRCE-4023 §2). The card is re-read until the screen changes — at once, then after
+ * growing pauses, about five seconds in all; the screen's own polling picks up anything slower.
  */
 async function settle(operationId: string, before: DealStatus): Promise<Deal | undefined> {
   let deal = await getDealById(operationId);
-  for (let check = 0; check < SETTLE_CHECKS && deal?.status === before; check += 1) {
-    await sleep(1000);
+  for (const pause of SETTLE_PAUSES_MS) {
+    if (deal?.status !== before) {
+      break;
+    }
+    await sleep(pause);
     deal = await getDealById(operationId);
   }
   return deal;

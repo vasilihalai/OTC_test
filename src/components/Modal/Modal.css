@@ -10,7 +10,7 @@
   padding: 16px;
   overflow-y: auto;
   z-index: 1000;
-  animation: modal-scrim-in 0.18s ease-out;
+  animation: modal-scrim-in 0.2s ease-out;
 }
 
 .modal__card {
@@ -19,7 +19,7 @@
   border-radius: 16px;
   display: flex;
   flex-direction: column;
-  animation: modal-card-in 0.2s cubic-bezier(0.2, 0.8, 0.3, 1);
+  animation: modal-card-in 0.26s var(--ease-out);
   box-shadow: 0 20px 40px rgba(0, 0, 0, .4);
 }
 
@@ -29,7 +29,7 @@
 }
 
 @keyframes modal-card-in {
-  from { opacity: 0; transform: scale(0.94) translateY(8px); }
+  from { opacity: 0; transform: scale(0.94) translateY(12px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
@@ -38,7 +38,7 @@
 }
 
 .modal__card--closing {
-  animation: modal-card-out 0.16s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: modal-card-out 0.16s var(--ease-in) forwards;
 }
 
 @keyframes modal-scrim-out {
@@ -83,6 +83,12 @@
   border-radius: 0;
   cursor: pointer;
   color: var(--text-muted);
+  transition: transform var(--dur-fast) var(--ease-out), color var(--dur) ease;
+}
+
+.modal__close:active {
+  transform: scale(0.85);
+  color: var(--text-body);
 }
 
 .modal__close svg {

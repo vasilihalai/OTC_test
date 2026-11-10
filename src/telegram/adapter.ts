@@ -24,6 +24,11 @@ export function notifyError(): void {
   hapticFeedback.notificationOccurred.ifAvailable('error');
 }
 
+/** The light tick a native control gives when its selection changes: tabs, segments, chips, checkboxes. */
+export function hapticSelection(): void {
+  hapticFeedback.selectionChanged.ifAvailable();
+}
+
 export function openExternalLink(url: string): void {
   // Outside real Telegram, ensureTelegramEnvironment() mocks the bridge so
   // openLink.ifAvailable() reports "available" without actually opening

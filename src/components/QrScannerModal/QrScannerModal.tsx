@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 
+import { Spinner } from '@/components/Spinner/Spinner.tsx';
 import { bem } from '@/css/bem.ts';
 import { extractAddressFromQrText } from '@/lib/qr.ts';
 import { ru } from '@/i18n/ru.ts';
@@ -32,6 +33,10 @@ export function QrScannerModal({ open, onClose, onScan }: QrScannerModalProps) {
   const frameRef = useRef<number>();
   const [state, setState] = useState<ScannerState>('requesting');
   const [retryToken, setRetryToken] = useState(0);
+  // Read through a ref: the parent hands over a new function on every render, and that must not
+  // restart the camera.
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
 
   useEffect(() => {
     if (!open) {
@@ -66,7 +71,7 @@ export function QrScannerModal({ open, onClose, onScan }: QrScannerModalProps) {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const code = jsQR(imageData.data, imageData.width, imageData.height);
             if (code) {
-              onScan(extractAddressFromQrText(code.data));
+              onScanRef.current(extractAddressFromQrText(code.data));
               return;
             }
           }
@@ -88,7 +93,7 @@ export function QrScannerModal({ open, onClose, onScan }: QrScannerModalProps) {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = undefined;
     };
-  }, [open, onScan, retryToken]);
+  }, [open, retryToken]);
 
   if (!open) {
     return null;
@@ -106,7 +111,10 @@ export function QrScannerModal({ open, onClose, onScan }: QrScannerModalProps) {
       {state !== 'denied' && (
         <div className={e('viewport')}>
           <video ref={videoRef} className={e('video')} playsInline muted/>
-          <div className={e('frame')} aria-hidden="true"/>
+          <div className={e('frame', { scanning: state === 'scanning' })} aria-hidden="true">
+            <span className={e('beam')}/>
+          </div>
+          {state === 'requesting' && <div className={e('waiting')}><Spinner size={28}/></div>}
         </div>
       )}
 

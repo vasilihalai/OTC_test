@@ -20,7 +20,13 @@ export function cacheByToken<T>(load: () => Promise<T>, ttlMs: number): TokenCac
       }
       const current = { token, at: Date.now(), promise: load() };
       entry = current;
-      current.promise.catch(() => {
+      current.promise.then(() => {
+        // Asked before the boot's silent sign-in had finished: the request waited for the token and
+        // was made with it, so that is the token this answer belongs to.
+        if (entry === current && current.token === null) {
+          current.token = getAccessToken();
+        }
+      }, () => {
         if (entry === current) {
           entry = undefined;
         }

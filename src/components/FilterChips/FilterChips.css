@@ -1,4 +1,5 @@
 .filter-chips {
+  position: relative;
   display: flex;
   gap: 6px;
   overflow-x: auto;
@@ -10,7 +11,20 @@
   display: none;
 }
 
+/* The chosen chip's fill: it slides to the chip and scrolls with the row. */
+.filter-chips__thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 36px;
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  pointer-events: none;
+  transition: transform 0.28s var(--ease-in-out), width 0.28s var(--ease-in-out);
+}
+
 .filter-chips__item {
+  position: relative;
   flex-shrink: 0;
   height: 36px;
   padding: 0 14px;
@@ -20,11 +34,15 @@
   color: var(--text-quiet);
   font-size: 13px;
   font-weight: 400;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+  transition: color 0.18s ease, transform 0.1s ease;
+}
+
+.filter-chips__item:active {
+  transform: scale(0.96);
 }
 
 .filter-chips__item--active {
-  background: var(--bg-elevated);
   color: var(--text-strong);
   font-weight: 600;
 }

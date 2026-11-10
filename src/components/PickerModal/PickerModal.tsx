@@ -1,10 +1,12 @@
 import { bem } from '@/css/bem.ts';
 import { useDelayedUnmount } from '@/lib/useDelayedUnmount.ts';
+import { hapticSelection } from '@/telegram/adapter.ts';
 
 import './PickerModal.css';
 
 const [b, e] = bem('picker-sheet');
-const EXIT_DURATION_MS = 160;
+/** Keep in sync with `picker-sheet-out` in PickerModal.css. */
+const EXIT_DURATION_MS = 200;
 
 export interface PickerModalOption<T extends string> {
   value: T;
@@ -37,7 +39,11 @@ export function PickerModal<T extends string>({ open, title, options, value, onS
               key={option.value}
               type="button"
               className={e('row', { selected: option.value === value })}
-              onClick={() => { onSelect(option.value); onClose(); }}
+              onClick={() => {
+                hapticSelection();
+                onSelect(option.value);
+                onClose();
+              }}
             >
               {option.label}
             </button>

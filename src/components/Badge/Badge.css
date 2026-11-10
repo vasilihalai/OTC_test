@@ -22,14 +22,3 @@
   color: var(--text-quiet);
 }
 
-.badge--count {
-  width: 34px;
-  height: 24px;
-  justify-content: center;
-  border-radius: 12px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  font-size: 14px;
-  font-weight: 500;
-  color: #FFFFFF;
-}

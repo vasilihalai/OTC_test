@@ -1,27 +1,30 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Panel } from '@/components/Panel/Panel.tsx';
-import { StatCard } from '@/components/StatCard/StatCard.tsx';
+import { StatCard, StatCardSkeleton } from '@/components/StatCard/StatCard.tsx';
 import { CompanyChip } from '@/components/CompanyChip/CompanyChip.tsx';
-import { DealRow } from '@/components/DealRow/DealRow.tsx';
+import { DealRow, DealRowsSkeleton } from '@/components/DealRow/DealRow.tsx';
 import { SegmentedControl } from '@/components/SegmentedControl/SegmentedControl.tsx';
-import { TableRow } from '@/components/TableRow/TableRow.tsx';
+import { TableRow, TableRowSkeleton } from '@/components/TableRow/TableRow.tsx';
 import { EmptyState } from '@/components/EmptyState/EmptyState.tsx';
-import { Skeleton } from '@/components/Skeleton/Skeleton.tsx';
+import { Skeleton, SkeletonGroup } from '@/components/Skeleton/Skeleton.tsx';
 import { Checkbox } from '@/components/Checkbox/Checkbox.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
-import { USE_REAL_API, getAssets, getDeals, getStats, getUser, invalidateBalances } from '@/api/index.ts';
-import type { Asset, AssetGroup, Deal, Stats, User } from '@/api/index.ts';
+import { USE_REAL_API, invalidateBalances } from '@/api/index.ts';
+import type { Asset } from '@/api/index.ts';
 import { useRequireOtcAccess, useRequireSession } from '@/store/session.ts';
 import { useUiStore } from '@/store/ui.ts';
 import { formatAmount } from '@/lib/money.ts';
+import { useAssets, useDeals, useStats, useUser } from '@/lib/queries.ts';
 import { usePolling } from '@/lib/usePolling.ts';
 import { ru } from '@/i18n/ru.ts';
 
 import './Home.css';
 
 const SMALL_BALANCE_USD = 1;
+/** How many of the latest deals Home shows; the rest are on the Deals tab. */
+const RECENT_DEALS = 2;
 
 // Largest USD equivalent first; a row without one (backend didn't price it) goes last.
 const byUsdValueDesc = (a: Asset, b: Asset) => (b.usdValue ?? -1) - (a.usdValue ?? -1);
@@ -30,72 +33,48 @@ export function Home() {
   const navigate = useNavigate();
   const session = useRequireSession();
   useRequireOtcAccess();
-  const clientType = session?.clientType ?? 'FL';
   const selectedGroup = useUiStore((s) => s.selectedAssetGroup);
   const setSelectedGroup = useUiStore((s) => s.setSelectedAssetGroup);
-  const balancesVersion = useUiStore((s) => s.balancesVersion);
   const hideSmall = useUiStore((s) => s.hideSmallBalances);
   const setHideSmall = useUiStore((s) => s.setHideSmallBalances);
 
-  const [user, setUser] = useState<User>();
-  const [stats, setStats] = useState<Stats>();
-  const [deals, setDeals] = useState<Deal[]>();
-  const [assetsByGroup, setAssetsByGroup] = useState<Record<AssetGroup, Asset[]>>();
-  const [assetsFailed, setAssetsFailed] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
-
-  const fail = useCallback((err: unknown) => {
-    console.error('[Home] load failed', err);
-    setLoadFailed(true);
-  }, []);
-
-  // Independent on purpose: one failing request must not leave every widget on its skeleton.
-  const load = useCallback(() => {
-    void getUser(clientType).then(setUser).catch(fail);
-    void getStats().then(setStats).catch(fail);
-    void getDeals().then(setDeals).catch(fail);
-  }, [clientType, fail]);
-
-  // Both groups at once (one balances request in real mode), so switching the crypto/fiat tab is
-  // instant. After a transfer the old list stays up until the fresh one lands.
-  const loadAssets = useCallback(() => {
-    setAssetsFailed(false);
-    void Promise.all([getAssets('crypto'), getAssets('fiat')])
-      .then(([crypto, fiat]) => setAssetsByGroup({ crypto, fiat }))
-      .catch((err: unknown) => {
-        console.error('[Home] balances load failed', err);
-        setAssetsFailed(true);
-      });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    loadAssets();
-  }, [loadAssets, balancesVersion]);
+  // Independent on purpose: one failing request must not leave every widget on its skeleton. What was
+  // on screen last time is shown at once and refreshed underneath.
+  const user = useUser(session?.clientType);
+  const stats = useStats();
+  const deals = useDeals();
+  const balances = useAssets();
 
   // Balances follow REST: every 20 seconds while Home is open, and at once on coming back to the app.
   usePolling(() => {
     invalidateBalances();
-    loadAssets();
+    void balances.refetch();
   }, 20_000, USE_REAL_API);
 
+  const openDeal = useCallback((id: string) => navigate(`/deals/${id}`), [navigate]);
+  const withdraw = useCallback(
+    (ticker: string) => navigate(`/withdraw/${selectedGroup}?asset=${ticker}`),
+    [navigate, selectedGroup],
+  );
+
+  const loadFailed = user.failed || stats.failed || deals.failed;
+
   function retry() {
-    setLoadFailed(false);
-    load();
+    for (const query of [user, stats, deals]) {
+      if (query.failed) {
+        void query.refetch();
+      }
+    }
   }
 
-  const assetsLoading = !assetsByGroup && !assetsFailed;
-  const assets = assetsByGroup?.[selectedGroup] ?? [];
+  const assets = balances.data?.[selectedGroup] ?? [];
   const positiveAssets = assets.filter((a) => Number(a.balance) > 0).sort(byUsdValueDesc);
   // An unpriced row is never hidden as dust — it may well not be.
   const visibleAssets = hideSmall
     ? positiveAssets.filter((a) => a.usdValue === undefined || a.usdValue >= SMALL_BALANCE_USD)
     : positiveAssets;
   const hiddenZeroBalance = assets.length > positiveAssets.length;
-  const showList = !assetsLoading && !assetsFailed;
+  const showList = !!balances.data;
 
   return (
     <div className="home">
@@ -107,18 +86,18 @@ export function Home() {
             <p className="home__desk-hours">{ru.home.deskHours}</p>
           </div>
           {loadFailed && <LoadError message={ru.common.errorGeneric} onRetry={retry}/>}
-          {!user && !loadFailed && <Skeleton width={140} height={22} radius={8}/>}
-          {user?.clientName && <CompanyChip>{user.clientName}</CompanyChip>}
+          {!user.data && !loadFailed && <Skeleton width={148} height={24} radius={20} className="home__chip-skeleton"/>}
+          {user.data?.clientName && <CompanyChip>{user.data.clientName}</CompanyChip>}
           <div className="home__stats">
-            {stats ? (
+            {stats.data ? (
               <>
-                <StatCard value={String(stats.activeDeals)} label={ru.home.statActiveDeals}/>
-                <StatCard value={stats.volume30d} unit={stats.volumeAsset} label={ru.home.statVolume30d}/>
+                <StatCard value={String(stats.data.activeDeals)} label={ru.home.statActiveDeals}/>
+                <StatCard value={stats.data.volume30d} unit={stats.data.volumeAsset} label={ru.home.statVolume30d}/>
               </>
             ) : (
               <>
-                <Skeleton height={84} radius={16}/>
-                <Skeleton height={84} radius={16}/>
+                <StatCardSkeleton label={ru.home.statActiveDeals}/>
+                <StatCardSkeleton label={ru.home.statVolume30d}/>
               </>
             )}
           </div>
@@ -127,16 +106,13 @@ export function Home() {
 
       <Panel radius="16px" padding="20px 0 4px">
         <h2 className="home__panel-heading">{ru.home.recentDealsTitle}</h2>
-        {!deals && (
-          <div className="home__deals-skeleton">
-            <Skeleton height={72} radius={12}/>
-            <Skeleton height={72} radius={12}/>
+        {!deals.data && <SkeletonGroup><DealRowsSkeleton count={RECENT_DEALS}/></SkeletonGroup>}
+        {deals.data?.length === 0 && <EmptyState caption={ru.home.noDeals}/>}
+        {deals.data && deals.data.length > 0 && (
+          <div className="stagger">
+            {deals.data.slice(0, RECENT_DEALS).map((deal) => <DealRow key={deal.id} deal={deal} onOpen={openDeal}/>)}
           </div>
         )}
-        {deals && deals.length === 0 && <EmptyState caption={ru.home.noDeals}/>}
-        {deals?.slice(0, 2).map((deal) => (
-          <DealRow key={deal.id} deal={deal} onClick={() => navigate(`/deals/${deal.id}`)}/>
-        ))}
       </Panel>
 
       <Panel radius="16px 16px 0 0" padding="20px 0">
@@ -154,16 +130,18 @@ export function Home() {
         <div className="home__balance-filter">
           <Checkbox checked={hideSmall} onChange={setHideSmall} label={ru.home.hideSmallBalances}/>
         </div>
-        <div className="home__assets">
-          {assetsLoading && (
-            <div className="home__deals-skeleton">
-              <Skeleton height={60} radius={12}/>
-              <Skeleton height={60} radius={12}/>
-            </div>
+        {/* Keyed by the tab: the other group's rows arrive as a list, not one by one as their tickers differ. */}
+        <div key={selectedGroup} className="home__assets stagger">
+          {balances.loading && (
+            <SkeletonGroup>
+              <TableRowSkeleton nameWidth={62} amountWidth={104}/>
+              <TableRowSkeleton nameWidth={84} amountWidth={88}/>
+              <TableRowSkeleton nameWidth={70} amountWidth={96}/>
+            </SkeletonGroup>
           )}
-          {assetsFailed && (
+          {balances.failed && (
             <div className="home__assets-error">
-              <LoadError message={ru.home.balancesError} onRetry={loadAssets}/>
+              <LoadError message={ru.home.balancesError} onRetry={() => void balances.refetch()}/>
             </div>
           )}
           {showList && positiveAssets.length === 0 && (
@@ -179,7 +157,7 @@ export function Home() {
               name={asset.name}
               amount={`${formatAmount(asset.balance, asset.ticker)} ${asset.ticker}`}
               actionLabel={`${ru.home.withdrawAction} ${asset.ticker}`}
-              onAction={() => navigate(`/withdraw/${asset.group}?asset=${asset.ticker}`)}
+              onAction={withdraw}
             />
           ))}
         </div>

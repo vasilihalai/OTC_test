@@ -23,6 +23,11 @@
   line-height: 20px;
   font-weight: 600;
   text-align: left;
+  transition: opacity var(--dur-fast) ease, color var(--dur) ease;
+}
+
+.document-row__main:active:not(:disabled) {
+  opacity: 0.6;
 }
 
 .document-row--disabled .document-row__main {
