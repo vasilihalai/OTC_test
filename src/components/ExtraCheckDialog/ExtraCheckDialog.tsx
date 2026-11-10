@@ -7,8 +7,12 @@ import { ru } from '@/i18n/ru.ts';
 
 import './ExtraCheckDialog.css';
 
-/** The web cabinet's address, per contour. Without it the dialog explains but has no link to offer. */
-const WEB_CABINET_URL = import.meta.env.VITE_WEB_CABINET_URL ?? '';
+/**
+ * The web cabinet: dev.xruby.kg for the dev contour (the mini app itself is served from a `.dev.` host
+ * there), xruby.kg everywhere else. `VITE_WEB_CABINET_URL` overrides it for a contour that differs.
+ */
+const WEB_CABINET_URL = import.meta.env.VITE_WEB_CABINET_URL
+  || (window.location.hostname.includes('.dev.') ? 'https://dev.xruby.kg' : 'https://xruby.kg');
 
 /**
  * `before` — the code wasn't sent: the withdrawal is closed by tasks the client hasn't done yet, and
@@ -41,20 +45,18 @@ export function ExtraCheckDialog({ check, onClose }: ExtraCheckDialogProps) {
       onClose={onClose}
       footer={(
         <div className="button-row">
-          <Button type="button" variant={WEB_CABINET_URL ? 'secondary' : 'primary'} onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={onClose}>
             {ru.withdraw.extraCheckCloseAction}
           </Button>
-          {WEB_CABINET_URL && (
-            <Button
-              variant="accent"
-              onClick={() => {
-                openExternalLink(WEB_CABINET_URL);
-                onClose();
-              }}
-            >
-              {ru.withdraw.extraCheckOpenAction}
-            </Button>
-          )}
+          <Button
+            variant="accent"
+            onClick={() => {
+              openExternalLink(WEB_CABINET_URL);
+              onClose();
+            }}
+          >
+            {ru.withdraw.extraCheckOpenAction}
+          </Button>
         </div>
       )}
     >
