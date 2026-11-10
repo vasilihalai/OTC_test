@@ -6,6 +6,8 @@ import type {
 import type { ClientType } from '@/api/types.ts';
 import { MOCK_USERS, MOCK_WITHDRAW_CRYPTO_NETWORKS, MOCK_WITHDRAW_FIAT_METHODS, mockDelay } from '@/api/mock/fixtures.ts';
 import { getAccountBalance, setAccountBalance } from '@/api/mock/accountsStore.ts';
+import { ApiError } from '@/api/real/http/apiError.ts';
+import { withdrawCheckScenario } from '@/lib/devSwitches.ts';
 import { RateLimitedError } from '@/lib/rateLimitedError.ts';
 import { ru } from '@/i18n/ru.ts';
 
@@ -55,6 +57,9 @@ export async function getWithdrawCryptoQuote(params: {
 
 export async function issueWithdrawOtp(_transactionId: string, clientType: ClientType): Promise<WithdrawOtpIssueResult> {
   await mockDelay('write');
+  if (withdrawCheckScenario() === 'tasks') {
+    throw new ApiError(422, 'EXTRA_CHECK_REQUIRED', 'Mock: the withdrawal is closed by user tasks (?withdraw=tasks)', '');
+  }
   return { twoFA: true, source: MOCK_USERS[clientType].authenticatorEnabled ? 'authenticator' : 'email' };
 }
 
@@ -74,7 +79,11 @@ export async function confirmWithdrawOtp(transactionId: string, otp: string): Pr
     setAccountBalance('deposit', pending.ticker, getAccountBalance('deposit', pending.ticker) - pending.amount);
     pendingWithdrawals.delete(transactionId);
   }
-  return { id: `WD-${Date.now().toString(36).toUpperCase()}`, status: 'PENDING' };
+  return {
+    id: `WD-${Date.now().toString(36).toUpperCase()}`,
+    status: 'PENDING',
+    pendingCheck: withdrawCheckScenario() === 'questionnaire' || undefined,
+  };
 }
 
 export async function getWithdrawFiatQuote(params: {

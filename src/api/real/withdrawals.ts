@@ -174,26 +174,25 @@ export async function getWithdrawFiatQuote(params: FiatWithdrawQuoteParams): Pro
 // ---------------------------------------------------------------------------
 
 /**
- * A withdrawal can be gated by checks the web cabinet walks the client through and the mini app has no
- * screens for: the anti-fraud questionnaire (`questionnaire`, BRCE-3433) and user tasks (`userTasks`,
- * BRCE-3810). With one required, no code is sent or the confirmed operation never executes — so it is
- * reported as such instead of a code prompt or an "accepted" notice.
+ * A withdrawal from the mini app meets the same checks as one from the web cabinet (BRCE-4023 §6): the
+ * anti-fraud questionnaire (`questionnaire`, BRCE-3433) and user tasks (`userTasks`, BRCE-3810). Neither
+ * is an error — the withdrawal stops until the client acts, and only the web cabinet has the screens:
+ *  - on the code request the code is not issued and nothing is created yet (`EXTRA_CHECK_REQUIRED`);
+ *  - on the confirmation the withdrawal exists and waits; it goes on by itself (`pendingCheck`).
  */
 interface ExtraChecks {
   questionnaire?: { required?: boolean } | null;
   userTasks?: { required?: boolean } | null;
 }
 
-function assertNoExtraChecks(result: ExtraChecks | undefined): void {
-  if (result?.questionnaire?.required || result?.userTasks?.required) {
-    throw new ApiError(422, 'EXTRA_CHECK_REQUIRED', 'The withdrawal needs a check the mini app does not support', '');
-  }
-}
+const needsExtraCheck = (result: ExtraChecks | undefined) => !!(result?.questionnaire?.required || result?.userTasks?.required);
 
 /** `clientType` unused (session-derived), kept to mirror the mock's signature. */
 export async function issueWithdrawOtp(transactionId: string): Promise<WithdrawOtpIssueResult> {
   const res = await apiFetch<{ result: WithdrawOtpIssueResult & ExtraChecks }>(`/v2/operations/issue-otp/${transactionId}`, { method: 'POST' }, false, 'financial');
-  assertNoExtraChecks(res.result);
+  if (needsExtraCheck(res.result)) {
+    throw new ApiError(422, 'EXTRA_CHECK_REQUIRED', 'No code was issued: the withdrawal is closed by user tasks', '');
+  }
   return res.result;
 }
 
@@ -224,8 +223,7 @@ export async function confirmWithdrawOtp(transactionId: string, otp: string, req
       }
     }
     if (res?.result) {
-      assertNoExtraChecks(res.result);
-      return res.result;
+      return needsExtraCheck(res.result) ? { ...res.result, pendingCheck: true } : res.result;
     }
     await sleep(1000);
   }

@@ -292,6 +292,11 @@ export interface FiatWithdrawOptions {
 export interface WithdrawalResult {
   id: string;
   status: 'PENDING';
+  /**
+   * The withdrawal is created but waits for the client: a questionnaire or user tasks, done in the web
+   * cabinet (BRCE-4023 §6). It goes on by itself afterwards — so this is neither "accepted" nor a failure.
+   */
+  pendingCheck?: boolean;
 }
 
 export type TransferAccount = 'deposit' | 'trading';

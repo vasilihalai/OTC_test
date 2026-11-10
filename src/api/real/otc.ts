@@ -331,8 +331,12 @@ interface RawRequisites {
   crypto?: RawCryptoRequisites | RawCryptoRequisites[] | null;
 }
 
+/**
+ * `OtcBankRequisites`. `correspondentAccount` isn't in the contract: the CRM's directory has no such
+ * value, and the backend named this field for the day it does (BRCE-4023 follow-up §2).
+ */
 const BANK_FIELDS = [
-  'companyName', 'recipientName', 'recipientAddress', 'recipientAccount', 'account', 'bankName', 'bankAddress', 'bic',
+  'recipientName', 'recipientAddress', 'recipientAccount', 'account', 'bankName', 'bankAddress', 'bic',
   'bankSwift', 'correspondentAccount', 'correspondentBankName', 'correspondentBankAddress', 'correspondentBankSwift',
   'intermediaryBankName', 'intermediaryBankAddress', 'intermediaryBankSwift',
 ] as const;
@@ -417,13 +421,15 @@ const EARLY_REPRICE_RETRIES = 3;
 
 /**
  * The new rate shows up in the card before the process can take the answer, so an early
- * ACCEPT_REPRICE/REJECT_REPRICE gets 409 and is repeated. Each repeat is a new attempt with its own id:
- * if an earlier one did land, the repeat gets 409 and changes nothing.
+ * ACCEPT_REPRICE/REJECT_REPRICE gets 409 and is repeated — with the same id (BRCE-4023 follow-up §4):
+ * a 409 isn't written to the command log, so the repeat runs as a new attempt, and if the first request
+ * did go through and only its answer was lost, the repeat answers 200 without acting twice.
  */
 async function postRepriceDecision(operationId: string, command: OtcCommand): Promise<void> {
+  const requestId = crypto.randomUUID();
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await postCommand(operationId, command, crypto.randomUUID());
+      await postCommand(operationId, command, requestId);
       return;
     } catch (err) {
       if (!(err instanceof ApiError && err.httpStatus === 409) || attempt >= EARLY_REPRICE_RETRIES) {

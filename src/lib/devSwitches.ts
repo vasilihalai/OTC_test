@@ -43,6 +43,23 @@ export function isEmptyDealsScenario(): boolean {
   return readHashParam('scenario') === 'empty_deals';
 }
 
+let withdrawCheck: 'tasks' | 'questionnaire' | undefined;
+
+/**
+ * `?withdraw=tasks` — the mock refuses to send the withdrawal code until "tasks are done";
+ * `?withdraw=questionnaire` — it takes the code and leaves the withdrawal waiting for a questionnaire.
+ * Remembered until the page reloads (the fiat flow changes screens on the way); `?withdraw=off` clears it.
+ */
+export function withdrawCheckScenario(): 'tasks' | 'questionnaire' | undefined {
+  const value = readHashParam('withdraw');
+  if (value === 'tasks' || value === 'questionnaire') {
+    withdrawCheck = value;
+  } else if (value !== null) {
+    withdrawCheck = undefined;
+  }
+  return withdrawCheck;
+}
+
 const LATENCY_KEY = 'xruby-mock-latency';
 
 /**

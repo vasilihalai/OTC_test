@@ -157,7 +157,12 @@ function useExpiry(deal: Deal, remainingMs: number, { onUpdate, refresh }: Pick<
   }, [remainingMs, deal.id, deal.quoteExpiresAt, onUpdate, refresh]);
 }
 
-/** What the client actually gives and gets once the hold is made: the frozen amount and the recalculated terms. */
+/**
+ * What the client actually gives and gets once the hold is made. In `HOLD` and `EXECUTED` the server
+ * has already rewritten `amountFrom`/`amountTo`/`rate` to the final terms — the frozen amount at the
+ * old rate after a shortfall within 1% or one the CRM accepted, at the new rate after ACCEPT_REPRICE
+ * (BRCE-4023 follow-up §3) — so the hold and `actual*` fields, read first, say the same thing.
+ */
 function settledAmounts(deal: Deal): { give: string; receive: string | null } {
   if (deal.status === 'RUNNING' || deal.status === 'DONE') {
     return { give: deal.holdAmount ?? deal.actualFrom ?? deal.from, receive: deal.actualTo ?? deal.to };

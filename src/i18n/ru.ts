@@ -246,6 +246,12 @@ export const ru = {
     /** Short ids only: a uuid means nothing to a client. */
     acceptedToast: 'Операция {id} принята в обработку',
     acceptedToastNoId: 'Операция принята в обработку',
+    /** A withdrawal stopped by a questionnaire or user tasks, which only the web cabinet can show. */
+    extraCheckTitle: 'Нужна проверка в веб-кабинете',
+    extraCheckBefore: 'Код не отправлен: перед этим выводом нужно выполнить задания в веб-кабинете xRuby. После этого повторите вывод.',
+    extraCheckPaused: 'Вывод создан и ждёт проверки. Заполните анкету или выполните задания в веб-кабинете xRuby — после этого вывод продолжится сам.',
+    extraCheckOpenAction: 'Открыть веб-кабинет',
+    extraCheckCloseAction: 'Понятно',
     requisitesTitle: 'Заполнение реквизитов',
     savedRequisiteLabel: 'Реквизиты',
     newRequisiteOption: 'Выберите реквизиты',

@@ -13,6 +13,7 @@ import { FieldSkeleton } from '@/components/Skeleton/FieldSkeleton.tsx';
 import { Spinner } from '@/components/Spinner/Spinner.tsx';
 import { LoadError } from '@/components/LoadError/LoadError.tsx';
 import { TwoFactorGate } from '@/components/TwoFactorGate/TwoFactorGate.tsx';
+import { type ExtraCheck, ExtraCheckDialog } from '@/components/ExtraCheckDialog/ExtraCheckDialog.tsx';
 import {
   ApiError,
   confirmWithdrawOtp,
@@ -98,6 +99,9 @@ export function WithdrawCrypto() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const withdrawalId = useRef<string>();
+  // A withdrawal stopped by a check that only the web cabinet can show (see ExtraCheckDialog).
+  const waitsForCheck = useRef(false);
+  const [extraCheck, setExtraCheck] = useState<ExtraCheck>();
   const [otpOpen, setOtpOpen] = useState(false);
   const [otpSource, setOtpSource] = useState<WithdrawOtpSource>('email');
 
@@ -238,7 +242,12 @@ export function WithdrawCrypto() {
       setOtpOpen(true);
     } catch (err) {
       notifyError();
-      setAmountError(err instanceof ApiError ? mapApiError(err) : ru.withdraw.errorGeneric);
+      if (err instanceof ApiError && err.code === 'EXTRA_CHECK_REQUIRED') {
+        // Not an error of the form: the code is held back until the client does the tasks.
+        setExtraCheck('before');
+      } else {
+        setAmountError(err instanceof ApiError ? mapApiError(err) : ru.withdraw.errorGeneric);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -249,7 +258,9 @@ export function WithdrawCrypto() {
       throw new Error(ru.withdraw.errorGeneric);
     }
     try {
-      withdrawalId.current = (await confirmWithdrawOtp(quote.transactionId, code, { address })).id;
+      const withdrawal = await confirmWithdrawOtp(quote.transactionId, code, { address });
+      withdrawalId.current = withdrawal.id;
+      waitsForCheck.current = !!withdrawal.pendingCheck;
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.httpStatus === 429) {
@@ -272,8 +283,21 @@ export function WithdrawCrypto() {
   function handleOtpVerified() {
     setOtpOpen(false);
     bumpBalancesVersion();
+    if (waitsForCheck.current) {
+      // Created, but waiting for the client: say so here; Home follows when the dialog is closed.
+      setExtraCheck('paused');
+      return;
+    }
     showWithdrawalAccepted(withdrawalId.current);
     navigate('/home', { replace: true });
+  }
+
+  function closeExtraCheck() {
+    const wasPaused = extraCheck === 'paused';
+    setExtraCheck(undefined);
+    if (wasPaused) {
+      navigate('/home', { replace: true });
+    }
   }
 
   if (balances.failed) {
@@ -408,6 +432,7 @@ export function WithdrawCrypto() {
         onResend={handleOtpResend}
         onVerified={handleOtpVerified}
       />
+      <ExtraCheckDialog check={extraCheck} onClose={closeExtraCheck}/>
       {qrOpen && (
         <Suspense fallback={<div className="withdraw-crypto__scanner-wait"><Spinner size={28}/></div>}>
           <QrScannerModal open onClose={() => setQrOpen(false)} onScan={handleQrScan}/>

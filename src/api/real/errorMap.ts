@@ -23,7 +23,7 @@ const KNOWN: Record<string, string> = {
   // back as the generic ER_SYS0006, which other endpoints use for plain validation failures too.
   TELEGRAM_BIND_FAILED: 'Не удалось привязать Telegram. Закройте и снова откройте приложение, затем войдите ещё раз',
   // Set by real/withdrawals.ts, not the backend.
-  EXTRA_CHECK_REQUIRED: 'Для этого вывода нужна дополнительная проверка. В мини-приложении она пока недоступна — оформите вывод в веб-кабинете',
+  EXTRA_CHECK_REQUIRED: 'Код не отправлен: сначала выполните задания в веб-кабинете xRuby, затем повторите вывод',
   STILL_PROCESSING: 'Операция ещё обрабатывается. Подождите минуту и введите код ещё раз',
 };
 

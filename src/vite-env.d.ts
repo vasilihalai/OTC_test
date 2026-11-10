@@ -12,4 +12,5 @@ interface ImportMetaEnv {
   readonly VITE_APP_VERSION?: string;
   readonly VITE_USE_REAL_API?: string;
   readonly VITE_FORCE_INAPP_HEADER?: string;
+  readonly VITE_WEB_CABINET_URL?: string;
 }

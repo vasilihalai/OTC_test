@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/Checkbox/Checkbox.tsx';
 import { SummaryCard, SummaryCardSkeleton } from '@/components/SummaryCard/SummaryCard.tsx';
 import { Button } from '@/components/Button/Button.tsx';
 import { TwoFactorGate } from '@/components/TwoFactorGate/TwoFactorGate.tsx';
+import { type ExtraCheck, ExtraCheckDialog } from '@/components/ExtraCheckDialog/ExtraCheckDialog.tsx';
 import {
   ApiError,
   confirmWithdrawOtp,
@@ -61,6 +62,9 @@ export function WithdrawRequisites() {
   const [accountError, setAccountError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const withdrawalId = useRef<string>();
+  // A withdrawal stopped by a check that only the web cabinet can show (see ExtraCheckDialog).
+  const waitsForCheck = useRef(false);
+  const [extraCheck, setExtraCheck] = useState<ExtraCheck>();
   const [otpOpen, setOtpOpen] = useState(false);
   const [otpSource, setOtpSource] = useState<WithdrawOtpSource>('email');
   const [quote, setQuote] = useState<WithdrawQuote>();
@@ -153,7 +157,12 @@ export function WithdrawRequisites() {
       setOtpOpen(true);
     } catch (err) {
       notifyError();
-      setAccountError(err instanceof ApiError ? mapApiError(err) : ru.withdraw.errorGeneric);
+      if (err instanceof ApiError && err.code === 'EXTRA_CHECK_REQUIRED') {
+        // Not an error of the form: the code is held back until the client does the tasks.
+        setExtraCheck('before');
+      } else {
+        setAccountError(err instanceof ApiError ? mapApiError(err) : ru.withdraw.errorGeneric);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -164,7 +173,9 @@ export function WithdrawRequisites() {
       throw new Error(ru.withdraw.errorGeneric);
     }
     try {
-      withdrawalId.current = (await confirmWithdrawOtp(quote.transactionId, code, requisitesPayload)).id;
+      const withdrawal = await confirmWithdrawOtp(quote.transactionId, code, requisitesPayload);
+      withdrawalId.current = withdrawal.id;
+      waitsForCheck.current = !!withdrawal.pendingCheck;
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.httpStatus === 429) {
@@ -187,8 +198,21 @@ export function WithdrawRequisites() {
   function handleOtpVerified() {
     setOtpOpen(false);
     bumpBalancesVersion();
+    if (waitsForCheck.current) {
+      // Created, but waiting for the client: say so here; Home follows when the dialog is closed.
+      setExtraCheck('paused');
+      return;
+    }
     showWithdrawalAccepted(withdrawalId.current);
     navigate('/home', { replace: true });
+  }
+
+  function closeExtraCheck() {
+    const wasPaused = extraCheck === 'paused';
+    setExtraCheck(undefined);
+    if (wasPaused) {
+      navigate('/home', { replace: true });
+    }
   }
 
   return (
@@ -267,6 +291,7 @@ export function WithdrawRequisites() {
         onResend={handleOtpResend}
         onVerified={handleOtpVerified}
       />
+      <ExtraCheckDialog check={extraCheck} onClose={closeExtraCheck}/>
     </div>
   );
 }

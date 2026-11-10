@@ -29,10 +29,16 @@ function FiatRow({ label, value }: { label: string; value: string }) {
  * The fiat rows in the frame's order and wording; the contract's SWIFT, beneficiary-account and
  * correspondent/intermediary bank rows sit next to their kin. Empty fields aren't shown; the
  * beneficiary's own account only when it differs from the settlement one (SWIFT accounts).
+ *
+ * The backend has one name for the frame's two rows: "Наименование компании" is `recipientName`
+ * (BRCE-4023 follow-up §2), so it goes there and "Получатель" appears only when a different name is
+ * given for it. A correspondent account doesn't exist in the CRM's directory: the row shows only if
+ * that field is ever sent.
  */
 function fiatRows(requisites: FiatRequisites): [string, string][] {
+  const company = requisites.companyName ?? requisites.recipientName;
   const rows: [string, string | undefined][] = [
-    [ru.dealDetail.requisitesCompanyName, requisites.companyName],
+    [ru.dealDetail.requisitesCompanyName, company],
     [ru.dealDetail.requisitesBank, requisites.bankName],
     [ru.dealDetail.requisitesBankAddress, requisites.bankAddress],
     [ru.dealDetail.requisitesBik, requisites.bic],
@@ -42,7 +48,7 @@ function fiatRows(requisites: FiatRequisites): [string, string][] {
       ru.dealDetail.requisitesBeneficiaryAccount,
       requisites.account !== requisites.recipientAccount ? requisites.account : undefined,
     ],
-    [ru.dealDetail.requisitesRecipient, requisites.recipientName],
+    [ru.dealDetail.requisitesRecipient, requisites.recipientName !== company ? requisites.recipientName : undefined],
     [ru.dealDetail.requisitesRecipientAddress, requisites.recipientAddress],
     [ru.dealDetail.requisitesCorrAccount, requisites.correspondentAccount],
     [ru.dealDetail.requisitesCorrespondentBank, requisites.correspondentBankName],
